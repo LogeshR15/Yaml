@@ -14,6 +14,7 @@ import SchemaBuilder from '@/components/SchemaBuilder';
 import SecurityBuilder from '@/components/SecurityBuilder';
 import YamlPreview from '@/components/YamlPreview';
 import Navbar from "@/components/Navbar";
+import DocToYamlConverter from "@/components/DocToYamlConverter";
 import { useAuth } from "../utils/AuthContext";
 
 export interface ApiInfo {
@@ -150,19 +151,9 @@ const Index = () => {
     return openApiSpec;
   };
 
-  const importFromYaml = () => {
-    if (!importYaml.trim()) {
-      toast({
-        title: "Error",
-        description: "Please paste your YAML content first",
-        variant: "destructive"
-      });
-      return;
-    }
-
+  const applyYaml = (yamlString: string) => {
     try {
-      // Parse the YAML content
-      const parsedYaml = yaml.load(importYaml) as any;
+      const parsedYaml = yaml.load(yamlString) as any;
       
       if (!parsedYaml || typeof parsedYaml !== 'object') {
         throw new Error('Invalid YAML format');
@@ -318,17 +309,25 @@ const Index = () => {
         title: "Success!",
         description: "YAML imported successfully! All components have been populated.",
       });
-      setImportYaml('');
       setActiveTab('info');
 
     } catch (error) {
       console.error('YAML Import Error:', error);
       toast({
-        title: "Import Error", 
+        title: "Import Error",
         description: `Failed to parse YAML: ${error instanceof Error ? error.message : 'Invalid format'}`,
         variant: "destructive"
       });
     }
+  };
+
+  const importFromYaml = () => {
+    if (!importYaml.trim()) {
+      toast({ title: "Error", description: "Please paste your YAML content first", variant: "destructive" });
+      return;
+    }
+    applyYaml(importYaml);
+    setImportYaml('');
   };
 
   const updateGlobalSecurity = (schemes: SecurityScheme[]) => {
@@ -376,6 +375,9 @@ const Index = () => {
               </Badge>
             </div>
           </div>
+
+          {/* AI Doc Converter */}
+          <DocToYamlConverter onYamlGenerated={applyYaml} />
 
           {/* YAML Import Section */}
           <Card className="mb-6 shadow-lg border-0 bg-white/80 backdrop-blur-sm">
