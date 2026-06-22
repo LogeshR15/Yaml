@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Copy, Download, RefreshCw, CheckCheck,
-  AlertTriangle, AlertCircle, Cpu
+  AlertTriangle, AlertCircle, Cpu, ExternalLink
 } from 'lucide-react';
 import type { GenerateResult } from '@/utils/gemini';
 
@@ -30,6 +30,13 @@ const YamlResult: React.FC<YamlResultProps> = ({ result, loading, onRegenerate }
     a.download = 'openapi-spec.yaml';
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const openInSwaggerEditor = () => {
+    if (!result?.yaml) return;
+    // Swagger editor can load YAML via URL-encoded content
+    const encoded = encodeURIComponent(result.yaml);
+    window.open(`https://editor.swagger.io/?url=data:text/yaml,${encoded}`, '_blank');
   };
 
   if (loading) {
@@ -75,8 +82,8 @@ const YamlResult: React.FC<YamlResultProps> = ({ result, loading, onRegenerate }
             </span>
           )}
           {hasErrors && (
-            <span className="text-xs text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
-              ⚠ Has issues
+            <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+              ⚠ Review suggested
             </span>
           )}
         </div>
@@ -85,65 +92,67 @@ const YamlResult: React.FC<YamlResultProps> = ({ result, loading, onRegenerate }
         )}
       </div>
 
-      {/* Validation errors */}
+      {/* Validation issues — shown as soft warning, not a blocker */}
       {hasErrors && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-3 space-y-1">
-          <div className="flex items-center gap-1.5 text-red-700 text-xs font-semibold">
-            <AlertCircle className="w-3.5 h-3.5" />
-            Validation errors
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-amber-700 text-xs font-semibold">
+              <AlertCircle className="w-3.5 h-3.5" />
+              Possible issues detected — YAML is shown below, you can still copy/download
+            </div>
           </div>
-          {validation.errors.map((e, i) => (
-            <p key={i} className="text-xs text-red-600 pl-5">• {e}</p>
+          {validation.errors.slice(0, 2).map((e, i) => (
+            <p key={i} className="text-xs text-amber-700 pl-5">• {e}</p>
           ))}
-          <p className="text-xs text-red-500 pl-5 pt-1">
-            Try clicking Regenerate — or add more detail to your docs.
+          <p className="text-xs text-amber-600 pl-5 pt-1">
+            Try <strong>Regenerate</strong> for a cleaner output, or validate in{' '}
+            <button onClick={openInSwaggerEditor} className="underline">Swagger Editor</button>.
           </p>
         </div>
       )}
 
-      {/* Warnings */}
+      {/* Structural warnings */}
       {hasWarnings && !hasErrors && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
-          <div className="flex items-center gap-1.5 text-amber-700 text-xs font-semibold">
+        <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 space-y-1">
+          <div className="flex items-center gap-1.5 text-blue-700 text-xs font-semibold">
             <AlertTriangle className="w-3.5 h-3.5" />
-            Suggestions for better ZIA agent compatibility
+            Suggestions for better ZIA compatibility
           </div>
-          {validation.warnings.slice(0, 3).map((w, i) => (
-            <p key={i} className="text-xs text-amber-700 pl-5">• {w}</p>
+          {validation.warnings.slice(0, 2).map((w, i) => (
+            <p key={i} className="text-xs text-blue-700 pl-5">• {w}</p>
           ))}
-          {validation.warnings.length > 3 && (
-            <p className="text-xs text-amber-500 pl-5">
-              +{validation.warnings.length - 3} more suggestions
-            </p>
-          )}
         </div>
       )}
 
-      {/* YAML Output */}
+      {/* YAML Output — always visible */}
       <div className="relative flex-1 min-h-[260px]">
         <pre className="h-full overflow-auto bg-gray-900 text-gray-100 rounded-xl p-4 text-xs leading-relaxed font-mono whitespace-pre">
           {yaml}
         </pre>
       </div>
 
-      {/* Actions */}
+      {/* Actions — always available */}
       <div className="flex gap-2">
         <button
           onClick={handleCopy}
           className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
         >
-          {copied ? (
-            <><CheckCheck className="w-4 h-4 text-green-600" /> Copied!</>
-          ) : (
-            <><Copy className="w-4 h-4" /> Copy YAML</>
-          )}
+          {copied
+            ? <><CheckCheck className="w-4 h-4 text-green-600" /> Copied!</>
+            : <><Copy className="w-4 h-4" /> Copy YAML</>}
         </button>
         <button
           onClick={handleDownload}
           className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
         >
-          <Download className="w-4 h-4" />
-          Download .yaml
+          <Download className="w-4 h-4" /> Download .yaml
+        </button>
+        <button
+          onClick={openInSwaggerEditor}
+          title="Validate in Swagger Editor"
+          className="px-3 py-2.5 rounded-lg border border-gray-300 text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-colors"
+        >
+          <ExternalLink className="w-4 h-4" />
         </button>
         <button
           onClick={onRegenerate}

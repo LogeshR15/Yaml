@@ -95,13 +95,29 @@ Zoho ZIA Agent Studio.
 - Never use circular $ref chains
 
 === SECURITY ===
-- securitySchemes MUST be defined under components.securitySchemes — NEVER at root level
-- For Zoho APIs: use OAuth2 with authorizationCode flow
-  authorizationUrl: https://accounts.zoho.com/oauth/v2/auth
-  tokenUrl: https://accounts.zoho.com/oauth/v2/token
-- Scope names: use the exact scope strings from the docs (e.g. Desk.tickets.READ)
-  Do NOT put quotes around scope names in the YAML
-- Add a security: block at the root level referencing the scheme
+The security section has TWO distinct parts — get this exactly right:
+
+PART A — Root-level security block (just references, NO definitions):
+  security:
+    - ZohoOAuth:
+        - Desk.tickets.CREATE
+  The root security block ONLY lists scheme name + scope strings. Nothing else.
+  NEVER put "type:", "flows:", "authorizationUrl:" inside the root security block.
+
+PART B — Full definition goes in components.securitySchemes:
+  components:
+    securitySchemes:
+      ZohoOAuth:
+        type: oauth2
+        flows:
+          authorizationCode:
+            authorizationUrl: https://accounts.zoho.com/oauth/v2/auth
+            tokenUrl: https://accounts.zoho.com/oauth/v2/token
+            scopes:
+              Desk.tickets.CREATE: Create tickets in Zoho Desk
+
+- Do NOT put quotes around scope names
+- securitySchemes MUST be under components — never at root level
 
 === ZOHO-SPECIFIC RULES ===
 - Standard Zoho auth header: Authorization (Zoho-oauthtoken {token}) — declare as OAuth2, not apiKey
