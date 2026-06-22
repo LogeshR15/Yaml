@@ -33,36 +33,47 @@ Rules:
 - If information is missing, use sensible defaults
 - The output must start with "openapi: 3.0.0"`;
 
+const GEMINI_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.0-flash-lite',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash-latest',
+  'gemini-pro',
+];
+
 const callGemini = async (apiKey: string, docs: string): Promise<string> => {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [
-            {
-              text: `${SYSTEM_PROMPT}\n\nConvert the following API documentation into a complete OpenAPI 3.0.0 YAML specification:\n\n${docs}`,
-            },
-          ],
-        },
-      ],
-      generationConfig: { maxOutputTokens: 4096, temperature: 0.1 },
-    }),
+  const prompt = `${SYSTEM_PROMPT}\n\nConvert the following API documentation into a complete OpenAPI 3.0.0 YAML specification:\n\n${docs}`;
+  const body = JSON.stringify({
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { maxOutputTokens: 4096, temperature: 0.1 },
   });
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `Gemini API error: HTTP ${response.status}`);
+  let lastError = '';
+  for (const model of GEMINI_MODELS) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      lastError = err?.error?.message || `HTTP ${response.status}`;
+      // If model not found or quota exceeded, try next model
+      if (response.status === 404 || response.status === 429) continue;
+      throw new Error(lastError);
+    }
+
+    const data = await response.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!text) { lastError = 'Empty response'; continue; }
+
+    // Strip markdown fences if present
+    return text.replace(/^```ya?ml\n?/i, '').replace(/```$/, '').trim();
   }
 
-  const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-  if (!text) throw new Error('Gemini returned an empty response.');
-
-  // Strip markdown fences if present
-  return text.replace(/^```ya?ml\n?/i, '').replace(/```$/, '').trim();
+  throw new Error(`All Gemini models failed. Last error: ${lastError}`);
 };
 
 const callClaude = async (apiKey: string, docs: string): Promise<string> => {
