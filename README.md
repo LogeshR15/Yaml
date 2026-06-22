@@ -1,74 +1,203 @@
-# Welcome to your Lovable project
+# ZIA YAML Studio
 
-## Project info
+> Convert Zoho API documentation into ZIA-agent-ready OpenAPI 3.0.1 YAML specs in seconds. No developer needed.
 
-**URL**: https://lovable.dev/projects/7fb44544-d1e6-497d-a637-7ec402838ec9
+---
 
-## How can I edit this code?
+## What Is This?
 
-There are several ways of editing your application.
+**ZIA YAML Studio** is a browser-based tool that solves a specific problem:
 
-**Use Lovable**
+Zoho ZIA Agent Studio requires a custom OpenAPI 3.0.1 YAML file to connect agents to APIs that aren't available as built-in tools. Writing these YAML files manually requires deep OpenAPI knowledge — a barrier for non-technical business users.
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/7fb44544-d1e6-497d-a637-7ec402838ec9) and start prompting.
+This tool removes that barrier. You copy text from any Zoho API documentation page, paste it in, and get a production-ready OpenAPI spec that you can upload directly to ZIA Agent Studio.
 
-Changes made via Lovable will be committed automatically to this repo.
+---
 
-**Use your preferred IDE**
+## Who Is It For?
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+- **Business users** who need to build ZIA agents but can't write YAML
+- **Zoho admins** who want to connect agents to Zoho Desk, FSM, CRM, Books, or any other Zoho product API
+- **Developers** who want to speed up repetitive OpenAPI spec creation
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+---
 
-Follow these steps:
+## How It Works
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+```
+1. Copy text from a Zoho API docs page  (Ctrl+A, Ctrl+C)
+        ↓
+2. Paste into ZIA YAML Studio
+        ↓
+3. Click Generate — Gemini AI reads the docs and writes the OpenAPI spec
+        ↓
+4. Download the .yaml file
+        ↓
+5. Upload to ZIA Agent Studio → Tools → Custom Tool → Schema
+```
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+---
 
-# Step 3: Install the necessary dependencies.
-npm i
+## Features
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+- **AI-powered conversion** — Uses Google Gemini (free tier, BYOK) to parse unstructured API docs
+- **ZIA-optimised output** — Generates OpenAPI 3.0.1 (the version ZIA Agent Studio requires)
+- **Smart prompt** — Enforces all ZIA compatibility rules: correct `operationId` format, `securitySchemes` placement, array `items`, Zoho ID types as `string`, OAuth2 scopes, MCP-ready `description` fields
+- **Model fallback** — Tries 6 Gemini models in sequence; if one is overloaded or unavailable, silently moves to the next
+- **Output sanitizer** — Auto-fixes common AI generation artifacts (unclosed quotes, malformed security blocks, invisible browser characters)
+- **Validation** — Checks the output against OpenAPI structural rules before displaying
+- **Swagger Editor link** — One click to validate in Swagger Editor for detailed error inspection
+- **No backend** — Runs entirely in the browser; your API key is stored only in localStorage
+- **No login required** — No Firebase, no Google auth, no account needed
+
+---
+
+## Supported Zoho APIs
+
+Quick links to documentation pages you can copy from:
+
+| Product | API Docs |
+|---------|----------|
+| Zoho Desk | https://desk.zoho.com/DeskAPIDocument |
+| Zoho CRM | https://www.zoho.com/crm/developer/docs/api/v8/ |
+| Zoho FSM | https://www.zoho.com/fsm/developer/help/api/ |
+| Zoho Books | https://www.zoho.com/books/api/v3/ |
+| Zoho Projects | https://projects.zoho.com/api-docs |
+| Zoho People | https://www.zoho.com/people/api/overview.html |
+| Zoho Inventory | https://www.zoho.com/inventory/api/v1/ |
+| Zoho Sign | https://www.zoho.com/sign/api/ |
+
+All Zoho APIs use OAuth 2.0. The generated YAML includes the correct `authorizationUrl` and `tokenUrl` automatically.
+
+---
+
+## Getting Started (Local)
+
+### Prerequisites
+- Node.js 22.x ([install with nvm](https://github.com/nvm-sh/nvm))
+- A free Google Gemini API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+
+### Run Locally
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/LogeshR15/Yaml.git
+cd Yaml
+
+# 2. Install dependencies
+npm install
+
+# 3. Start the dev server
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Open **http://localhost:8080** in your browser.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+No `.env` file is needed. The app runs without any environment variables.
 
-**Use GitHub Codespaces**
+### Getting a Free Gemini API Key
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+1. Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+2. Sign in with your Google account
+3. Click **Create API key**
+4. Copy the key (starts with `AIza...`)
+5. Paste it into the **Set up Gemini API key** section in the app and click Save
 
-## What technologies are used for this project?
+Free tier limits: **1,500 requests/day**, no credit card required.
 
-This project is built with:
+---
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+## Deployment on Zoho Catalyst
 
-## How can I deploy this project?
+This is a pure static frontend — no backend or database required.
 
-Simply open [Lovable](https://lovable.dev/projects/7fb44544-d1e6-497d-a637-7ec402838ec9) and click on Share -> Publish.
+**Recommended stack:** Node.js (22.14.0) on Catalyst AppSail
+**Minimum machine type:** 2 Core / 4 GB RAM / 30 GB Storage
 
-## Can I connect a custom domain to my Lovable project?
+```bash
+# Build for production
+npm run build
 
-Yes, you can!
+# The dist/ folder contains the static files to deploy
+```
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+Deploy the `dist/` folder to Catalyst AppSail or any static hosting service.
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
-# yamlstudio
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Framework | React 18 + TypeScript 5 |
+| Build tool | Vite 5 (SWC compiler) |
+| Styling | Tailwind CSS |
+| UI components | shadcn/ui + Radix UI |
+| Icons | Lucide React |
+| YAML parsing | js-yaml |
+| Routing | React Router v6 |
+| AI provider | Google Gemini API (user's own key) |
+| State management | React useState (no Redux/Zustand) |
+| Auth | None |
+| Backend | None |
+| Database | None |
+
+---
+
+## Project Structure
+
+```
+src/
+├── pages/
+│   └── Index.tsx              # Main page — orchestrates the 3-step flow
+├── components/
+│   ├── Navbar.tsx             # Top navigation bar
+│   ├── KeySetup.tsx           # Gemini API key input and storage
+│   ├── DocsInput.tsx          # Paste zone for API documentation
+│   └── YamlResult.tsx         # Output panel with copy/download/validate
+└── utils/
+    ├── gemini.ts              # Gemini API client with 6-model fallback
+    ├── prompt.ts              # System prompt with ZIA-specific OpenAPI rules
+    ├── sanitizeYaml.ts        # Post-processing to fix AI generation artifacts
+    └── validateYaml.ts        # Structural validation against OpenAPI rules
+```
+
+---
+
+## OpenAPI Rules Enforced
+
+The AI prompt is tuned to produce ZIA-compatible specs. Key rules applied automatically:
+
+| Rule | Why It Matters |
+|------|---------------|
+| `openapi: 3.0.1` | ZIA Agent Studio requires exactly this version |
+| `operationId` = camelCase verb+noun | Becomes the tool name the LLM uses to call the API |
+| Rich `description` on every operation | Primary signal ZIA uses to select the right tool |
+| `securitySchemes` under `components` | Root-level placement causes spec rejection |
+| All arrays have `items` | Agents can't interpret typeless arrays |
+| Zoho IDs as `type: string` | 18-digit IDs overflow `integer` type |
+| `format: date` on date fields | Prevents LLM from hallucinating date formats |
+| `enum` on fixed-value fields | Constrains agent to valid values |
+| `example` on all parameters | Improves tool-calling accuracy in ZIA |
+
+---
+
+## Known Limitations
+
+- Output quality depends on how much detail is in the pasted docs — more text = better YAML
+- Gemini free tier has rate limits; the tool falls back through 6 models automatically
+- The tool generates a first-pass spec; complex APIs may need minor manual edits
+- Zoho Catalyst deployment has not been tested end-to-end (local dev only)
+
+---
+
+## About ZIA Agents
+
+Zoho ZIA Agents are autonomous AI agents that can call REST APIs as tools. To connect an agent to a custom API:
+
+1. In ZIA Agent Studio, go to **Tools → Create Tool Group → Custom**
+2. Under **Schema**, upload an OpenAPI 3.0.1 YAML file
+3. Create a **Connection** with the OAuth credentials for the target API
+4. The agent will use the `operationId` and `description` fields to decide when and how to call each endpoint
+
+More: [Zoho ZIA Agents](https://www.zoho.com/agents/) · [ZIA Agent Studio](https://www.zoho.com/agents/resources/help/)
