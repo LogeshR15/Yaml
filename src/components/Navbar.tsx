@@ -1,60 +1,30 @@
-import { Button } from '@/components/ui/button';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/utils/AuthContext';
-import { signInWithGoogle, handleSignOut } from '@/utils/firebase-config';
+import React from 'react';
+import { Zap } from 'lucide-react';
 
-export default function Navbar() {
-  const { user } = useAuth();
-  const navigate = useNavigate();
-
-  const handleSignIn = async () => {
-    try {
-      await signInWithGoogle();
-    } catch (error) {
-      console.error('Sign in error:', error);
-    }
-  };
-
-  return (
-    <nav className="bg-white shadow-sm mb-6">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
-          <div className="flex items-center">
-            <h1 className="text-xl font-bold text-gray-900">YAML Studio</h1>
-          </div>
-          <div className="flex items-center gap-4">
-            {user ? (
-              <>
-                <div className="flex items-center gap-3">
-                  <img
-                    src={user.photoURL || ''}
-                    alt="Profile"
-                    className="h-8 w-8 rounded-full"
-                  />
-                  <span className="text-sm font-medium text-gray-700">
-                    {user.displayName}
-                  </span>
-                </div>
-                <Button 
-                  variant="destructive" 
-                  size="sm"
-                  onClick={handleSignOut}
-                >
-                  Sign Out
-                </Button>
-              </>
-            ) : (
-              <Button 
-                variant="default" 
-                size="sm"
-                onClick={handleSignIn}
-              >
-                Sign In
-              </Button>
-            )}
-          </div>
+const Navbar: React.FC = () => (
+  <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+    <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
+      <div className="flex items-center gap-2.5">
+        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 flex items-center justify-center">
+          <Zap className="w-4 h-4 text-white" />
+        </div>
+        <div>
+          <span className="font-bold text-gray-900 text-sm">ZIA YAML Studio</span>
+          <span className="ml-2 text-xs text-gray-400 hidden sm:inline">
+            API Docs → OpenAPI Spec for ZIA Agents
+          </span>
         </div>
       </div>
-    </nav>
-  );
-}
+      <a
+        href="https://www.zoho.com/agents/"
+        target="_blank"
+        rel="noreferrer"
+        className="text-xs text-blue-600 hover:underline hidden sm:block"
+      >
+        About ZIA Agents →
+      </a>
+    </div>
+  </header>
+);
+
+export default Navbar;
