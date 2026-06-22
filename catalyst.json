@@ -1,0 +1,20 @@
+{
+  "functions": {
+    "targets": [
+      "yaml_api"
+    ],
+    "ignore": [],
+    "source": "functions"
+  },
+  "slate": [
+    {
+      "name": "yaml",
+      "source": "dist",
+      "framework": "React",
+      "build_config": {
+        "build_command": "npm run build",
+        "build_output_path": "dist"
+      }
+    }
+  ]
+}
