@@ -5,8 +5,8 @@ const catalyst = require('zcatalyst-sdk-node');
 const app = express();
 app.use(express.json());
 
-// CORS for local dev only — production Slate domain is handled by
-// Catalyst gateway (Console → Authentication → Authorized Domains → CORS toggle)
+// CORS — Catalyst gateway handles production Slate domain via Authorized Domains.
+// This block only covers localhost dev.
 app.use((req, res, next) => {
   const origin = req.headers.origin || '';
   if (/^http:\/\/localhost(:\d+)?$/.test(origin)) {
@@ -26,9 +26,11 @@ function sanitize(str) {
   return String(str || '').replace(/'/g, '');
 }
 
-// ── GET /server/yaml_api/yamls ─────────────────────────────────────────────
-// Public. Paginated list with optional ?search=&product=&page= filters.
-app.get('/server/yaml_api/yamls', async (req, res) => {
+// Catalyst strips /server/yaml_api prefix before passing to Express,
+// so routes are defined without that prefix.
+
+// ── GET /yamls ─────────────────────────────────────────────────────────────
+app.get('/yamls', async (req, res) => {
   try {
     const adminApp = catalyst.initialize(req, { scope: 'admin' });
     const zcql = adminApp.zcql();
@@ -49,7 +51,6 @@ app.get('/server/yaml_api/yamls', async (req, res) => {
     }
 
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
-    // Exclude yaml_content from list queries — only detail/download return it
     const query = `SELECT ROWID, tool_name, product_name, description, creator_name, creator_id, download_count, tags, CREATEDTIME FROM ${TABLE} ${where} ORDER BY CREATEDTIME DESC LIMIT ${offset}, ${PAGE_SIZE}`;
 
     const rows = await zcql.executeZCQLQuery(query);
@@ -62,11 +63,9 @@ app.get('/server/yaml_api/yamls', async (req, res) => {
   }
 });
 
-// ── POST /server/yaml_api/yamls ────────────────────────────────────────────
-// Requires auth (checked in code; Security Rules set to optional at gateway).
-app.post('/server/yaml_api/yamls', async (req, res) => {
+// ── POST /yamls ────────────────────────────────────────────────────────────
+app.post('/yamls', async (req, res) => {
   try {
-    // User-scope — only for identity resolution
     const userApp = catalyst.initialize(req);
     const currentUser = await userApp.userManagement().getCurrentUser();
     if (!currentUser || !currentUser.user_id) {
@@ -105,9 +104,8 @@ app.post('/server/yaml_api/yamls', async (req, res) => {
   }
 });
 
-// ── GET /server/yaml_api/yamls/:id ────────────────────────────────────────
-// Public. Returns full spec including yaml_content.
-app.get('/server/yaml_api/yamls/:id', async (req, res) => {
+// ── GET /yamls/:id ─────────────────────────────────────────────────────────
+app.get('/yamls/:id', async (req, res) => {
   try {
     const adminApp = catalyst.initialize(req, { scope: 'admin' });
     const zcql = adminApp.zcql();
@@ -127,9 +125,8 @@ app.get('/server/yaml_api/yamls/:id', async (req, res) => {
   }
 });
 
-// ── POST /server/yaml_api/yamls/:id/download ──────────────────────────────
-// Public. Increments download_count and returns yaml_content.
-app.post('/server/yaml_api/yamls/:id/download', async (req, res) => {
+// ── POST /yamls/:id/download ───────────────────────────────────────────────
+app.post('/yamls/:id/download', async (req, res) => {
   try {
     const adminApp = catalyst.initialize(req, { scope: 'admin' });
     const zcql = adminApp.zcql();
@@ -144,7 +141,6 @@ app.post('/server/yaml_api/yamls/:id/download', async (req, res) => {
 
     if (!spec) return res.status(404).json({ error: 'Spec not found' });
 
-    // Two-step increment — no atomic INCREMENT in ZCQL
     await table.updateRow({
       ROWID: spec.ROWID,
       download_count: Number(spec.download_count || 0) + 1,

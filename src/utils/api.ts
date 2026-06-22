@@ -1,4 +1,4 @@
-const BASE = '/server/yaml_api';
+const BASE = (import.meta.env.VITE_API_BASE as string) || '/server/yaml_api';
 
 export interface YamlSpec {
   ROWID: string;
