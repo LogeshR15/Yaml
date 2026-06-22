@@ -5,17 +5,24 @@ export const GEMINI_KEY_STORAGE = 'zia_yaml_gemini_key';
 
 /**
  * Ordered list of Gemini models to try.
- * Falls through to next on 404 (model not found) or 429 (quota exceeded).
+ * Older/smaller models (gemini-pro, 1.5-flash) tend to have
+ * more stable availability on the free tier.
  */
 const MODELS = [
-  { version: 'v1beta', name: 'gemini-2.5-flash-lite' },
-  { version: 'v1beta', name: 'gemini-2.5-flash' },
-  { version: 'v1beta', name: 'gemini-2.0-flash-lite' },
-  { version: 'v1beta', name: 'gemini-1.5-flash' },
-  { version: 'v1beta', name: 'gemini-pro' },
-  { version: 'v1',     name: 'gemini-1.5-flash' },
-  { version: 'v1',     name: 'gemini-pro' },
+  { api: 'v1beta', name: 'gemini-1.5-flash' },
+  { api: 'v1beta', name: 'gemini-pro' },
+  { api: 'v1beta', name: 'gemini-1.5-flash-latest' },
+  { api: 'v1beta', name: 'gemini-2.0-flash-lite' },
+  { api: 'v1beta', name: 'gemini-2.5-flash-lite' },
+  { api: 'v1beta', name: 'gemini-2.5-flash' },
 ];
+
+/** Status codes that mean "try the next model" */
+const RETRYABLE_STATUSES = new Set([400, 404, 429, 503, 529]);
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 function stripMarkdownFences(text: string): string {
   return text
@@ -25,40 +32,49 @@ function stripMarkdownFences(text: string): string {
     .trim();
 }
 
-async function callGeminiModel(
+/** Returns null when we should try the next model. Throws on hard failures. */
+async function callModel(
   apiKey: string,
-  model: { version: string; name: string },
-  userPrompt: string
+  model: { api: string; name: string },
+  prompt: string
 ): Promise<{ text: string; modelUsed: string } | null> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model.name}:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/${model.api}/models/${model.name}:generateContent?key=${apiKey}`;
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: `${SYSTEM_PROMPT}\n\n${userPrompt}` }] }],
-      generationConfig: { maxOutputTokens: 8192, temperature: 0.1 },
-    }),
-  });
-
-  // Retry with next model on quota or not-found errors
-  if (res.status === 404 || res.status === 429 || res.status === 400) {
-    return null;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `${SYSTEM_PROMPT}\n\n${prompt}` }] }],
+        generationConfig: { maxOutputTokens: 8192, temperature: 0.1 },
+      }),
+    });
+  } catch {
+    return null; // Network error — try next model
   }
+
+  if (RETRYABLE_STATUSES.has(res.status)) return null;
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `API error ${res.status}`);
+    const msg: string = err?.error?.message || `API error ${res.status}`;
+    // If the message is about high demand / overload, silently try next model
+    if (
+      msg.toLowerCase().includes('high demand') ||
+      msg.toLowerCase().includes('overloaded') ||
+      msg.toLowerCase().includes('resource exhausted')
+    ) {
+      return null;
+    }
+    throw new Error(msg);
   }
 
   const data = await res.json();
-  const raw = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  const raw: string | undefined = data.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!raw) return null;
 
-  return {
-    text: stripMarkdownFences(raw),
-    modelUsed: model.name,
-  };
+  return { text: stripMarkdownFences(raw), modelUsed: model.name };
 }
 
 export interface GenerateResult {
@@ -74,48 +90,52 @@ export async function generateYaml(
   const userPrompt = `Convert the following Zoho API documentation into a complete, ZIA-agent-ready OpenAPI 3.0.1 YAML specification:\n\n${docs}`;
   const retryPrompt = `${userPrompt}${RETRY_PROMPT_SUFFIX}`;
 
-  let lastError = 'All Gemini models failed or returned no output.';
+  let lastError = 'All Gemini models are currently busy. Please wait a moment and try again.';
   let lastYaml = '';
+  let triedCount = 0;
 
   for (const model of MODELS) {
-    let result: { text: string; modelUsed: string } | null = null;
+    // Small delay between model attempts to avoid hammering the API
+    if (triedCount > 0) await sleep(600);
+    triedCount++;
 
+    let result: { text: string; modelUsed: string } | null = null;
     try {
-      result = await callGeminiModel(apiKey, model, userPrompt);
+      result = await callModel(apiKey, model, userPrompt);
     } catch (err) {
+      // Hard error (e.g. invalid API key) — stop immediately
       lastError = err instanceof Error ? err.message : String(err);
-      break; // Non-retryable error (bad API key, network etc.)
+      break;
     }
 
-    if (!result) continue; // Try next model
+    if (!result) continue; // Model unavailable — try next
 
     const validation = validateOpenApiYaml(result.text);
-
     if (validation.valid) {
       return { yaml: result.text, modelUsed: result.modelUsed, validation };
     }
 
-    // Invalid YAML — try once more with stricter prompt on same model
+    // Output was invalid YAML — retry once with a stricter prompt
     lastYaml = result.text;
     try {
-      const retry = await callGeminiModel(apiKey, model, retryPrompt);
+      await sleep(400);
+      const retry = await callModel(apiKey, model, retryPrompt);
       if (retry) {
-        const retryValidation = validateOpenApiYaml(retry.text);
-        if (retryValidation.valid) {
-          return { yaml: retry.text, modelUsed: retry.modelUsed, validation: retryValidation };
+        const rv = validateOpenApiYaml(retry.text);
+        if (rv.valid) {
+          return { yaml: retry.text, modelUsed: retry.modelUsed, validation: rv };
         }
         lastYaml = retry.text;
-        lastError = `Validation failed: ${retryValidation.errors.join(', ')}`;
+        lastError = `Validation failed: ${rv.errors.join('; ')}`;
       }
     } catch {
-      // Ignore retry error, move to next model
+      /* ignore — move on */
     }
   }
 
-  // If we have output but it failed validation, return it anyway with warnings
+  // All models tried — if we have any YAML output at all, return it with warnings
   if (lastYaml && lastYaml.includes('openapi')) {
-    const validation = validateOpenApiYaml(lastYaml);
-    return { yaml: lastYaml, modelUsed: 'unknown', validation };
+    return { yaml: lastYaml, modelUsed: 'unknown', validation: validateOpenApiYaml(lastYaml) };
   }
 
   throw new Error(lastError);
