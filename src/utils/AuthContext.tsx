@@ -1,32 +1,31 @@
-import { createContext, useContext, useEffect, useState } from "react";
-import { User, onAuthStateChanged } from "firebase/auth";
-import { auth, isFirebaseConfigured } from "./firebase-config";
+import { createContext, useContext, useEffect, useState } from 'react';
+import { isUserAuthenticated, signOut as catalystSignOut, type CatalystUser } from './catalyst-auth';
 
 interface AuthContextType {
-  user: User | null;
+  user: CatalystUser | null;
   loading: boolean;
+  signOut: () => void;
 }
 
-const AuthContext = createContext<AuthContextType>({ user: null, loading: false });
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  loading: true,
+  signOut: () => {},
+});
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(isFirebaseConfigured);
+  const [user, setUser] = useState<CatalystUser | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!isFirebaseConfigured || !auth) {
-      setLoading(false);
-      return;
-    }
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
-      setLoading(false);
-    });
-    return () => unsubscribe();
+    isUserAuthenticated()
+      .then(setUser)
+      .catch(() => setUser(null))
+      .finally(() => setLoading(false));
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading }}>
+    <AuthContext.Provider value={{ user, loading, signOut: catalystSignOut }}>
       {!loading && children}
     </AuthContext.Provider>
   );

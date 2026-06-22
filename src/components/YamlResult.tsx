@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import {
   Copy, Download, RefreshCw, CheckCheck,
-  AlertTriangle, AlertCircle, Cpu, ExternalLink
+  AlertTriangle, AlertCircle, Cpu, ExternalLink, Share2
 } from 'lucide-react';
 import type { GenerateResult } from '@/utils/gemini';
+import PublishModal from '@/components/PublishModal';
 
 interface YamlResultProps {
   result: GenerateResult | null;
@@ -14,6 +15,7 @@ interface YamlResultProps {
 
 const YamlResult: React.FC<YamlResultProps> = ({ result, loading, onRegenerate, toolName }) => {
   const [copied, setCopied] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
 
   const handleCopy = async () => {
     if (!result?.yaml) return;
@@ -150,6 +152,13 @@ const YamlResult: React.FC<YamlResultProps> = ({ result, loading, onRegenerate, 
           <Download className="w-4 h-4" /> Download .yaml
         </button>
         <button
+          onClick={() => setPublishOpen(true)}
+          title="Publish to Marketplace"
+          className="px-3 py-2.5 rounded-lg border border-gray-300 text-gray-500 hover:text-violet-600 hover:border-violet-300 transition-colors"
+        >
+          <Share2 className="w-4 h-4" />
+        </button>
+        <button
           onClick={openInSwaggerEditor}
           title="Validate in Swagger Editor"
           className="px-3 py-2.5 rounded-lg border border-gray-300 text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-colors"
@@ -164,6 +173,13 @@ const YamlResult: React.FC<YamlResultProps> = ({ result, loading, onRegenerate, 
           <RefreshCw className="w-4 h-4" />
         </button>
       </div>
+
+      <PublishModal
+        isOpen={publishOpen}
+        onClose={() => setPublishOpen(false)}
+        toolName={toolName || ''}
+        yamlContent={yaml}
+      />
     </div>
   );
 };
