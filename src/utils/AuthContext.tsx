@@ -18,10 +18,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    isUserAuthenticated()
-      .then(setUser)
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false));
+    try {
+      const result = isUserAuthenticated();
+      if (result && typeof result.then === 'function') {
+        result
+          .then(setUser)
+          .catch(() => setUser(null))
+          .finally(() => setLoading(false));
+      } else {
+        setLoading(false);
+      }
+    } catch {
+      setUser(null);
+      setLoading(false);
+    }
   }, []);
 
   return (
