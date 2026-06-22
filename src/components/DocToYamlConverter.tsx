@@ -11,12 +11,18 @@ interface DocToYamlConverterProps {
   onYamlGenerated: (yaml: string) => void;
 }
 
-const CLAUDE_API_KEY_STORAGE = 'yaml_studio_claude_api_key';
+type AIProvider = 'gemini' | 'claude';
+
+const STORAGE_KEYS = {
+  gemini: 'yaml_studio_gemini_api_key',
+  claude: 'yaml_studio_claude_api_key',
+  provider: 'yaml_studio_ai_provider',
+};
 
 const SYSTEM_PROMPT = `You are an expert at reading API documentation and converting it into valid OpenAPI 3.0.0 YAML specifications.
 
 Rules:
-- Always output ONLY valid OpenAPI 3.0.0 YAML — no markdown fences, no explanation text
+- Always output ONLY valid OpenAPI 3.0.0 YAML — no markdown fences, no explanation text, no triple backticks
 - Infer path parameters from URL patterns like {id} or :id
 - Use appropriate HTTP methods based on the documentation
 - Map all request body fields to schema properties with correct types
@@ -27,17 +33,95 @@ Rules:
 - If information is missing, use sensible defaults
 - The output must start with "openapi: 3.0.0"`;
 
+const callGemini = async (apiKey: string, docs: string): Promise<string> => {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [
+            {
+              text: `${SYSTEM_PROMPT}\n\nConvert the following API documentation into a complete OpenAPI 3.0.0 YAML specification:\n\n${docs}`,
+            },
+          ],
+        },
+      ],
+      generationConfig: { maxOutputTokens: 4096, temperature: 0.1 },
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `Gemini API error: HTTP ${response.status}`);
+  }
+
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+  if (!text) throw new Error('Gemini returned an empty response.');
+
+  // Strip markdown fences if present
+  return text.replace(/^```ya?ml\n?/i, '').replace(/```$/, '').trim();
+};
+
+const callClaude = async (apiKey: string, docs: string): Promise<string> => {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4096,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: `Convert the following API documentation into a complete OpenAPI 3.0.0 YAML specification:\n\n${docs}` }],
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `Claude API error: HTTP ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.content?.[0]?.text?.trim() || '';
+};
+
 const DocToYamlConverter: React.FC<DocToYamlConverterProps> = ({ onYamlGenerated }) => {
   const [docs, setDocs] = useState('');
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem(CLAUDE_API_KEY_STORAGE) || '');
+  const [provider, setProvider] = useState<AIProvider>(
+    (localStorage.getItem(STORAGE_KEYS.provider) as AIProvider) || 'gemini'
+  );
+  const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem(STORAGE_KEYS.gemini) || '');
+  const [claudeKey, setClaudeKey] = useState(() => localStorage.getItem(STORAGE_KEYS.claude) || '');
   const [loading, setLoading] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
-  const [showKeyInput, setShowKeyInput] = useState(!localStorage.getItem(CLAUDE_API_KEY_STORAGE));
+  const [showKeyInput, setShowKeyInput] = useState(
+    !localStorage.getItem(STORAGE_KEYS.gemini) && !localStorage.getItem(STORAGE_KEYS.claude)
+  );
+
+  const currentKey = provider === 'gemini' ? geminiKey : claudeKey;
+  const hasSavedKey = !!localStorage.getItem(STORAGE_KEYS[provider]);
 
   const saveApiKey = () => {
-    localStorage.setItem(CLAUDE_API_KEY_STORAGE, apiKey);
+    if (provider === 'gemini') {
+      localStorage.setItem(STORAGE_KEYS.gemini, geminiKey);
+    } else {
+      localStorage.setItem(STORAGE_KEYS.claude, claudeKey);
+    }
+    localStorage.setItem(STORAGE_KEYS.provider, provider);
     setShowKeyInput(false);
-    toast({ title: 'API key saved', description: 'Your Claude API key has been saved locally.' });
+    toast({ title: 'API key saved', description: `Your ${provider === 'gemini' ? 'Gemini' : 'Claude'} API key has been saved locally.` });
+  };
+
+  const handleProviderChange = (p: AIProvider) => {
+    setProvider(p);
+    localStorage.setItem(STORAGE_KEYS.provider, p);
+    setShowKeyInput(!localStorage.getItem(STORAGE_KEYS[p]));
   };
 
   const convert = async () => {
@@ -45,46 +129,24 @@ const DocToYamlConverter: React.FC<DocToYamlConverterProps> = ({ onYamlGenerated
       toast({ title: 'No content', description: 'Please paste your API documentation first.', variant: 'destructive' });
       return;
     }
-    const key = apiKey || localStorage.getItem(CLAUDE_API_KEY_STORAGE);
+    const key = provider === 'gemini'
+      ? (geminiKey || localStorage.getItem(STORAGE_KEYS.gemini))
+      : (claudeKey || localStorage.getItem(STORAGE_KEYS.claude));
+
     if (!key) {
       setShowKeyInput(true);
-      toast({ title: 'API key required', description: 'Please enter your Claude API key to use this feature.', variant: 'destructive' });
+      toast({ title: 'API key required', description: `Please enter your ${provider === 'gemini' ? 'Gemini' : 'Claude'} API key.`, variant: 'destructive' });
       return;
     }
 
     setLoading(true);
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': key,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 4096,
-          system: SYSTEM_PROMPT,
-          messages: [
-            {
-              role: 'user',
-              content: `Convert the following API documentation into a complete OpenAPI 3.0.0 YAML specification:\n\n${docs}`,
-            },
-          ],
-        }),
-      });
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err?.error?.message || `HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      const generatedYaml = data.content?.[0]?.text?.trim();
+      const generatedYaml = provider === 'gemini'
+        ? await callGemini(key, docs)
+        : await callClaude(key, docs);
 
       if (!generatedYaml || !generatedYaml.startsWith('openapi:')) {
-        throw new Error('Claude did not return valid OpenAPI YAML. Try adding more detail to your docs.');
+        throw new Error('AI did not return valid OpenAPI YAML. Try adding more detail to your docs.');
       }
 
       onYamlGenerated(generatedYaml);
@@ -108,14 +170,51 @@ const DocToYamlConverter: React.FC<DocToYamlConverterProps> = ({ onYamlGenerated
           <Wand2 className="w-5 h-5 text-purple-600" />
           Convert API Docs to OpenAPI YAML
           <span className="ml-auto text-xs font-normal text-purple-600 bg-purple-50 px-2 py-1 rounded-full">
-            Powered by Claude AI
+            Powered by AI
           </span>
         </CardTitle>
         <p className="text-sm text-gray-500 mt-1">
-          Paste any API documentation — Zoho docs, plain text, markdown — and Claude will generate a complete OpenAPI spec for you.
+          Paste any API documentation — Zoho docs, plain text, markdown — and AI will generate a complete OpenAPI spec for you.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
+
+        {/* Provider Toggle */}
+        <div className="space-y-1">
+          <Label className="text-xs text-gray-500">AI Provider</Label>
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleProviderChange('gemini')}
+              className={`flex-1 py-2 px-3 rounded-lg border text-sm font-medium transition-all ${
+                provider === 'gemini'
+                  ? 'bg-blue-50 border-blue-400 text-blue-700'
+                  : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+              }`}
+            >
+              🔵 Google Gemini
+              <span className="ml-1 text-xs text-green-600 font-normal">(Free tier)</span>
+            </button>
+            <button
+              onClick={() => handleProviderChange('claude')}
+              className={`flex-1 py-2 px-3 rounded-lg border text-sm font-medium transition-all ${
+                provider === 'claude'
+                  ? 'bg-purple-50 border-purple-400 text-purple-700'
+                  : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+              }`}
+            >
+              🟣 Claude (Anthropic)
+            </button>
+          </div>
+          {provider === 'gemini' && (
+            <p className="text-xs text-gray-400">
+              Get a free key at{' '}
+              <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-blue-500 underline">
+                aistudio.google.com
+              </a>{' '}→ Sign in → Get API key
+            </p>
+          )}
+        </div>
+
         {/* API Key Section */}
         <div>
           <button
@@ -123,24 +222,28 @@ const DocToYamlConverter: React.FC<DocToYamlConverterProps> = ({ onYamlGenerated
             className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 transition-colors"
           >
             <Key className="w-3 h-3" />
-            {localStorage.getItem(CLAUDE_API_KEY_STORAGE) ? 'Claude API key saved' : 'Set Claude API key'}
-            {showKeyInput ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            {hasSavedKey
+              ? `${provider === 'gemini' ? 'Gemini' : 'Claude'} API key saved ✓`
+              : `Set ${provider === 'gemini' ? 'Gemini' : 'Claude'} API key`}
+            {showKeyInput ? <ChevronUp className="w-3 h-3 ml-1" /> : <ChevronDown className="w-3 h-3 ml-1" />}
           </button>
           {showKeyInput && (
             <div className="mt-2 flex gap-2">
               <div className="flex-1">
                 <Input
                   type={showApiKey ? 'text' : 'password'}
-                  placeholder="sk-ant-..."
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={provider === 'gemini' ? 'AIza...' : 'sk-ant-...'}
+                  value={currentKey}
+                  onChange={(e) =>
+                    provider === 'gemini' ? setGeminiKey(e.target.value) : setClaudeKey(e.target.value)
+                  }
                   className="font-mono text-sm"
                 />
               </div>
               <Button variant="outline" size="sm" onClick={() => setShowApiKey(!showApiKey)} className="px-3">
                 {showApiKey ? 'Hide' : 'Show'}
               </Button>
-              <Button size="sm" onClick={saveApiKey} disabled={!apiKey.trim()}>
+              <Button size="sm" onClick={saveApiKey} disabled={!currentKey.trim()}>
                 Save
               </Button>
             </div>
@@ -166,7 +269,7 @@ const DocToYamlConverter: React.FC<DocToYamlConverterProps> = ({ onYamlGenerated
           {loading ? (
             <>
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Converting with Claude...
+              Converting with {provider === 'gemini' ? 'Gemini' : 'Claude'}...
             </>
           ) : (
             <>
