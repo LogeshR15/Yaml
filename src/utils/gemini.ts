@@ -1,5 +1,6 @@
 import { SYSTEM_PROMPT, RETRY_PROMPT_SUFFIX } from './prompt';
 import { validateOpenApiYaml, ValidationResult } from './validateYaml';
+import { sanitizeYaml } from './sanitizeYaml';
 
 export const GEMINI_KEY_STORAGE = 'zia_yaml_gemini_key';
 
@@ -74,7 +75,7 @@ async function callModel(
   const raw: string | undefined = data.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!raw) return null;
 
-  return { text: stripMarkdownFences(raw), modelUsed: model.name };
+  return { text: sanitizeYaml(stripMarkdownFences(raw)), modelUsed: model.name };
 }
 
 export interface GenerateResult {

@@ -58,7 +58,15 @@ Zoho ZIA Agent Studio.
 - Query/header parameters: set required correctly based on the docs
 - Date fields: always add schema.format: date  (YYYY-MM-DD) or format: date-time
 - Fixed-value fields: always add schema.enum array listing all valid values
-- Add schema.example on every parameter with a realistic Zoho-style value
+- Add schema.example on every parameter with a SHORT, realistic value — NO long strings, NO sentences
+  Use bare unquoted values where possible:
+    example: 2389290          ← orgId (short numeric string, no quotes needed)
+    example: 1892000000042032 ← ticketId
+    example: Open             ← status
+    example: High             ← priority
+    example: 2026-06-22       ← date
+  NEVER write:  example: "   (unclosed quote — causes YAML syntax error)
+  NEVER write:  example: "The unique ID of the...  (prose in example — causes syntax error)
 - Zoho IDs (orgId, ticketId, contactId, departmentId, assigneeId, teamId, etc.):
   ALWAYS use type: string — never integer (Zoho IDs are 18-digit numbers that overflow integers)
 
