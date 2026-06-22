@@ -9,9 +9,10 @@ interface YamlResultProps {
   result: GenerateResult | null;
   loading: boolean;
   onRegenerate: () => void;
+  toolName?: string;
 }
 
-const YamlResult: React.FC<YamlResultProps> = ({ result, loading, onRegenerate }) => {
+const YamlResult: React.FC<YamlResultProps> = ({ result, loading, onRegenerate, toolName }) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -23,11 +24,12 @@ const YamlResult: React.FC<YamlResultProps> = ({ result, loading, onRegenerate }
 
   const handleDownload = () => {
     if (!result?.yaml) return;
+    const slug = toolName?.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '') || 'openapi-spec';
     const blob = new Blob([result.yaml], { type: 'text/yaml' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'openapi-spec.yaml';
+    a.download = `${slug}.yaml`;
     a.click();
     URL.revokeObjectURL(url);
   };

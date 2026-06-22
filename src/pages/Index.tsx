@@ -19,6 +19,7 @@ const ZOHO_PRODUCTS = [
 
 const Index: React.FC = () => {
   const [apiKey, setApiKey] = useState(localStorage.getItem(GEMINI_KEY_STORAGE) || '');
+  const [toolName, setToolName] = useState('');
   const [docs, setDocs] = useState('');
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -118,6 +119,20 @@ const Index: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left: Input */}
           <div className="bg-white border border-gray-200 rounded-xl p-5 flex flex-col gap-4">
+            <div>
+              <label htmlFor="toolName" className="block text-sm font-medium text-gray-700 mb-1">
+                Tool Name
+              </label>
+              <input
+                id="toolName"
+                type="text"
+                value={toolName}
+                onChange={(e) => setToolName(e.target.value)}
+                placeholder="e.g., zoho-desk-tickets"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <p className="text-xs text-gray-400 mt-1">Used as the downloaded filename — <code className="bg-gray-100 px-1 rounded">{toolName ? toolName.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '') || 'openapi-spec' : 'openapi-spec'}.yaml</code></p>
+            </div>
             <DocsInput value={docs} onChange={setDocs} />
 
             {error && (
@@ -142,6 +157,7 @@ const Index: React.FC = () => {
               result={result}
               loading={loading}
               onRegenerate={handleRegenerate}
+              toolName={toolName}
             />
           </div>
         </div>
