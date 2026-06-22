@@ -1,6 +1,9 @@
 /**
  * Attempts to fix common AI-generation artifacts in YAML output
  * before passing to the YAML parser / validator.
+ *
+ * IMPORTANT: Only fix things that are unambiguously wrong.
+ * Never touch lines that end with ":" — those are valid YAML block keys.
  */
 export function sanitizeYaml(raw: string): string {
   let text = raw.trim();
@@ -14,52 +17,50 @@ export function sanitizeYaml(raw: string): string {
     text = text.slice(openApiIndex);
   }
 
-  // 3. Fix dangling/unclosed double-quoted strings on a line.
+  // 3. Fix lines with an unclosed double-quoted string value.
+  //    Only targets lines where the VALUE (after the colon) starts with a quote
+  //    but the quote is never closed on that same line.
   //    e.g.  example: "2389290      → example: "2389290"
   //          example: "             → example: "example-value"
+  //    Safe: lines ending with bare ":" are block keys — NOT touched here.
   text = text
     .split('\n')
     .map((line) => {
-      // Count unescaped double-quotes on the line
-      const quotes = (line.match(/(?<!\\)"/g) || []).length;
-      if (quotes % 2 !== 1) return line; // already balanced or no quotes
+      // Only consider lines that have a colon followed by a quoted value
+      if (!/:\s+"/.test(line) && !/:\s+'/.test(line)) return line;
+
+      const dq = (line.match(/(?<!\\)"/g) || []).length;
+      if (dq % 2 === 0) return line; // quotes balanced
 
       const trimmed = line.trimEnd();
-
-      // If the line ends with just `"` (truncated value), replace with placeholder
+      // Line ends with just an open quote and nothing else → replace with placeholder
       if (/:\s*"$/.test(trimmed)) {
-        return trimmed.slice(0, trimmed.lastIndexOf('"')) + '"example-value"';
+        return trimmed.replace(/:\s*"$/, ': "example-value"');
       }
-
-      // Otherwise just close the open quote at end of line
+      // Otherwise close the dangling quote
       return trimmed + '"';
     })
     .join('\n');
 
-  // 4. Fix dangling single-quoted strings the same way
+  // 4. Same fix for single-quoted values
   text = text
     .split('\n')
     .map((line) => {
-      const quotes = (line.match(/(?<!\\)'/g) || []).length;
-      if (quotes % 2 !== 1) return line;
+      if (!/:\s+'/.test(line)) return line;
+      const sq = (line.match(/(?<!\\)'/g) || []).length;
+      if (sq % 2 === 0) return line;
       const trimmed = line.trimEnd();
       if (/:\s*'$/.test(trimmed)) {
-        return trimmed.slice(0, trimmed.lastIndexOf("'")) + "'example-value'";
+        return trimmed.replace(/:\s*'$/, ": 'example-value'");
       }
       return trimmed + "'";
     })
     .join('\n');
 
-  // 5. Remove stray lines that are just a quote character (common truncation artifact)
+  // 5. Remove stray lines that are ONLY a quote character (truncation artifact)
   text = text
     .split('\n')
     .filter((line) => !/^\s*["']\s*$/.test(line))
-    .join('\n');
-
-  // 6. Ensure the YAML doesn't end mid-key (line ending with a lone colon)
-  text = text
-    .split('\n')
-    .map((line) => (/:\s*$/.test(line) && !line.trim().startsWith('#') ? line + ' ""' : line))
     .join('\n');
 
   return text.trim();
