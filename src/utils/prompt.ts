@@ -6,7 +6,7 @@
  * - ZIA Agent Studio accepts OpenAPI 3.0.1 YAML for custom tool definitions
  * - operationId becomes the tool name the LLM uses to invoke the endpoint
  * - description is the #1 signal the agent uses to select the right tool
- * - securitySchemes must live under components (not root)
+ * - ZIA Agent Studio rejects securitySchemes and security: blocks — omit entirely
  * - Amazon Bedrock / ZIA runtime: operationId must be letters, hyphens, underscores only
  */
 
@@ -91,33 +91,18 @@ Zoho ZIA Agent Studio.
 === COMPONENTS / SCHEMAS ===
 - Define reusable schemas in components.schemas for request bodies and complex responses
 - Use $ref: '#/components/schemas/SchemaName' to reference them
+- $ref MUST be used as a sibling to type/description/items — NEVER as a key inside properties:
+  WRONG: items: { type: object, properties: { $ref: '#/components/schemas/Foo' } }
+  RIGHT: items: { $ref: '#/components/schemas/Foo' }
 - Flatten deeply nested objects where possible (max 2 levels of nesting)
 - Never use circular $ref chains
 
 === SECURITY ===
-The security section has TWO distinct parts — get this exactly right:
-
-PART A — Root-level security block (just references, NO definitions):
-  security:
-    - ZohoOAuth:
-        - Desk.tickets.CREATE
-  The root security block ONLY lists scheme name + scope strings. Nothing else.
-  NEVER put "type:", "flows:", "authorizationUrl:" inside the root security block.
-
-PART B — Full definition goes in components.securitySchemes:
-  components:
-    securitySchemes:
-      ZohoOAuth:
-        type: oauth2
-        flows:
-          authorizationCode:
-            authorizationUrl: https://accounts.zoho.com/oauth/v2/auth
-            tokenUrl: https://accounts.zoho.com/oauth/v2/token
-            scopes:
-              Desk.tickets.CREATE: Create tickets in Zoho Desk
-
-- Do NOT put quotes around scope names
-- securitySchemes MUST be under components — never at root level
+ZIA Agent Studio does NOT support securitySchemes or security blocks.
+- Do NOT include a "security:" block anywhere (root level or per-operation)
+- Do NOT include "securitySchemes:" anywhere in the YAML
+- Do NOT include any auth-related fields under "components:"
+- The ZIA runtime handles authentication separately — leave it out entirely
 
 === ZOHO-SPECIFIC RULES ===
 - Standard Zoho auth header: Authorization (Zoho-oauthtoken {token}) — declare as OAuth2, not apiKey
@@ -130,7 +115,7 @@ PART B — Full definition goes in components.securitySchemes:
 Before outputting, mentally verify:
 1. openapi: 3.0.1 is the first line
 2. Every path has at least one operation with a unique operationId
-3. securitySchemes is under components, not at root
+3. No "security:" or "securitySchemes:" anywhere in the output
 4. Every array property has items defined
 5. No integer type for any Zoho ID field
 6. $ref is used for Contact, Ticket, and other reusable objects

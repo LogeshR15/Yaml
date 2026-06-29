@@ -64,8 +64,13 @@ export function sanitizeYaml(raw: string): string {
     })
     .join('\n');
 
-  // 8. Fix incorrectly structured root-level security block.
-  text = fixSecurityBlock(text);
+  // 8. Remove securitySchemes and security: blocks — ZIA Agent Studio rejects them.
+  text = removeSecurityFields(text);
+
+  // 9. Fix $ref incorrectly placed as a key inside properties: — it must be at the parent level.
+  //    Gemini sometimes generates: items: { type: object, properties: { $ref: '#/...' } }
+  //    which is invalid. The $ref must replace the whole object, not be a child of properties.
+  text = fixRefInProperties(text);
 
   return text.trim();
 }
@@ -84,38 +89,59 @@ function normalizeInvisible(text: string): string {
   return out.join('');
 }
 
-function fixSecurityBlock(text: string): string {
+/**
+ * Fix $ref placed as a key inside a properties: block, which is always invalid in OpenAPI.
+ * Handles two forms Gemini generates:
+ *   A: type: object  +  properties:  +  sole $ref:  →  just $ref at parent indent
+ *   B: properties:  +  sole $ref:  (no explicit type line)  →  just $ref at parent indent
+ */
+function fixRefInProperties(text: string): string {
+  // Form A: { type: object, properties: { $ref: ... } }
+  text = text.replace(
+    /^( +)type: object\n\1properties:\n\1  (\$ref: .+)$/gm,
+    '$1$2',
+  );
+  // Form B: { properties: { $ref: ... } } without explicit type
+  text = text.replace(
+    /^( +)properties:\n\1  (\$ref: .+)$/gm,
+    '$1$2',
+  );
+  return text;
+}
+
+/** Remove securitySchemes and security: blocks — ZIA Agent Studio rejects both. */
+function removeSecurityFields(text: string): string {
   const lines = text.split('\n');
-  const secIdx = lines.findIndex((l) => /^security:\s*$/.test(l));
-  if (secIdx === -1) return text;
+  const out: string[] = [];
+  let i = 0;
 
-  let endIdx = lines.length;
-  for (let i = secIdx + 1; i < lines.length; i++) {
-    const l = lines[i];
-    if (l.length > 0 && !/^\s/.test(l)) { endIdx = i; break; }
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trimStart();
+    const indent = line.length - trimmed.length;
+
+    const shouldRemove =
+      trimmed.startsWith('securitySchemes:') ||
+      trimmed.startsWith('security:');
+
+    if (shouldRemove) {
+      i++;
+      // Skip all lines belonging to this block (more indented, or blank continuation lines).
+      while (i < lines.length) {
+        const next = lines[i];
+        const nextTrimmed = next.trimStart();
+        const nextIndent = next.length - nextTrimmed.length;
+        if (nextTrimmed === '' || nextIndent > indent) {
+          i++;
+        } else {
+          break;
+        }
+      }
+    } else {
+      out.push(line);
+      i++;
+    }
   }
 
-  const secBlock = lines.slice(secIdx, endIdx).join('\n');
-  if (!/type:\s*oauth2/.test(secBlock) && !/flows:/.test(secBlock)) return text;
-
-  const schemeMatch = secBlock.match(/-\s+(\w+):/);
-  if (!schemeMatch) return text;
-  const schemeName = schemeMatch[1];
-
-  const scopes: string[] = [];
-  const scopeRe = /([A-Za-z][A-Za-z0-9]+(?:\.[A-Za-z0-9]+){1,})/g;
-  const skip = new Set(['oauth2', 'authorizationCode', 'implicit', 'clientCredentials', 'password']);
-  let m: RegExpExecArray | null;
-  while ((m = scopeRe.exec(secBlock)) !== null) {
-    const c = m[1];
-    if (!skip.has(c) && !scopes.includes(c)) scopes.push(c);
-  }
-
-  const pad = '  ';
-  const scopeLines = scopes.length > 0
-    ? scopes.map((s) => `${pad}    - ${s}`).join('\n')
-    : `${pad}    - []`;
-
-  const fixed = `security:\n${pad}- ${schemeName}:\n${scopeLines}`;
-  return [...lines.slice(0, secIdx), ...fixed.split('\n'), ...lines.slice(endIdx)].join('\n');
+  return out.join('\n');
 }
