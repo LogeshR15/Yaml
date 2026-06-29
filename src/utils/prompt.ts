@@ -87,6 +87,9 @@ Zoho ZIA Agent Studio.
 - 200/201: include a content schema with realistic response properties
 - Response schemas should have at minimum: id, key status/state fields, and timestamps
 - Never leave a response schema with only one or two fields — expand it realistically
+- NEVER use $ref directly at the response level pointing to schemas/ — always use description + content/schema:
+  WRONG: "400": { $ref: '#/components/schemas/ErrorResponse' }
+  RIGHT: "400": { description: Bad Request, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
 
 === COMPONENTS / SCHEMAS ===
 - Define reusable schemas in components.schemas for request bodies and complex responses

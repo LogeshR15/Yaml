@@ -73,7 +73,11 @@ export function sanitizeYaml(raw: string): string {
   //    which is invalid. The $ref must replace the whole object, not be a child of properties.
   text = fixRefInProperties(text);
 
-  // 10. Inject standardized Zoho OAuth2 security — ZIA Agent Studio requires a security
+  // 10. Fix response status codes that use $ref directly to a schema instead of wrapping
+  //     it in description + content/schema. ZIA rejects: "400": { $ref: '.../schemas/Foo' }
+  text = fixResponseSchemaRefs(text);
+
+  // 11. Inject standardized Zoho OAuth2 security — ZIA Agent Studio requires a security
   //     definition. We inject a canonical version rather than trusting Gemini to place it
   //     correctly (it frequently nests securitySchemes inside schemas: instead of components:).
   text = injectSecurity(text);
@@ -93,6 +97,46 @@ function normalizeInvisible(text: string): string {
     out.push(text[i]);
   }
   return out.join('');
+}
+
+const HTTP_DESCRIPTIONS: Record<string, string> = {
+  '200': 'OK', '201': 'Created', '204': 'No Content',
+  '400': 'Bad Request', '401': 'Unauthorized', '403': 'Forbidden',
+  '404': 'Not Found', '405': 'Method Not Allowed', '409': 'Conflict',
+  '422': 'Unprocessable Entity', '429': 'Too Many Requests',
+  '500': 'Internal Server Error', '503': 'Service Unavailable',
+};
+
+/**
+ * Fix response entries that use $ref directly to a schema object instead of a response object.
+ * OpenAPI requires $ref at the response level to point to #/components/responses/, not schemas/.
+ * Gemini commonly generates:
+ *   "400":
+ *     $ref: '#/components/schemas/ErrorResponse'    ← invalid
+ * We rewrite it to:
+ *   "400":
+ *     description: Bad Request
+ *     content:
+ *       application/json:
+ *         schema:
+ *           $ref: '#/components/schemas/ErrorResponse'
+ */
+function fixResponseSchemaRefs(text: string): string {
+  return text.replace(
+    /^( +)"(\d{3})":\n\1  (\$ref: ['"]?#\/components\/schemas\/[\w-]+['"]?)$/gm,
+    (_, indent, code, ref) => {
+      const desc = HTTP_DESCRIPTIONS[code] ?? 'Error';
+      const i = indent; // indent of the status code line
+      return (
+        `${i}"${code}":\n` +
+        `${i}  description: ${desc}\n` +
+        `${i}  content:\n` +
+        `${i}    application/json:\n` +
+        `${i}      schema:\n` +
+        `${i}        ${ref}`
+      );
+    },
+  );
 }
 
 const ZOHO_SECURITY_SCHEMES = `  securitySchemes:
