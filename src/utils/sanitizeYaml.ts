@@ -64,13 +64,19 @@ export function sanitizeYaml(raw: string): string {
     })
     .join('\n');
 
-  // 8. Remove securitySchemes and security: blocks — ZIA Agent Studio rejects them.
+  // 8. Strip any security/securitySchemes Gemini generated (often in wrong location).
+  //    Step 9 will inject a standardized replacement, so we always get correct security.
   text = removeSecurityFields(text);
 
   // 9. Fix $ref incorrectly placed as a key inside properties: — it must be at the parent level.
   //    Gemini sometimes generates: items: { type: object, properties: { $ref: '#/...' } }
   //    which is invalid. The $ref must replace the whole object, not be a child of properties.
   text = fixRefInProperties(text);
+
+  // 10. Inject standardized Zoho OAuth2 security — ZIA Agent Studio requires a security
+  //     definition. We inject a canonical version rather than trusting Gemini to place it
+  //     correctly (it frequently nests securitySchemes inside schemas: instead of components:).
+  text = injectSecurity(text);
 
   return text.trim();
 }
@@ -87,6 +93,44 @@ function normalizeInvisible(text: string): string {
     out.push(text[i]);
   }
   return out.join('');
+}
+
+const ZOHO_SECURITY_SCHEMES = `  securitySchemes:
+    ZohoOAuth:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://accounts.zoho.com/oauth/v2/auth
+          tokenUrl: https://accounts.zoho.com/oauth/v2/token
+          scopes:
+            ZohoAPI.fullaccess.all: Full access to Zoho APIs`;
+
+/**
+ * Inject a canonical root-level security block and securitySchemes under components:.
+ * ZIA Agent Studio requires security to be present. We always strip Gemini's version
+ * (step 8) and inject a consistent one here so placement is always correct.
+ *
+ * Structure injected:
+ *   security:               ← root level, before paths:
+ *     - ZohoOAuth: []
+ *   components:
+ *     schemas: ...          ← existing
+ *     securitySchemes: ...  ← appended here (sibling of schemas, NOT inside it)
+ */
+function injectSecurity(text: string): string {
+  // Root security block — insert immediately before paths:
+  if (!/^security:/m.test(text) && /^paths:/m.test(text)) {
+    text = text.replace(/^paths:/m, 'security:\n  - ZohoOAuth: []\npaths:');
+  }
+
+  // securitySchemes — append at the end of the document.
+  // components: is always the last top-level section in OpenAPI 3.0.1, so appending
+  // with 2-space indent places it as a direct child of components: (sibling of schemas:).
+  if (!/securitySchemes:/m.test(text) && /^components:/m.test(text)) {
+    text = text.trimEnd() + '\n' + ZOHO_SECURITY_SCHEMES;
+  }
+
+  return text;
 }
 
 /**

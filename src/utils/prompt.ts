@@ -98,11 +98,10 @@ Zoho ZIA Agent Studio.
 - Never use circular $ref chains
 
 === SECURITY ===
-ZIA Agent Studio does NOT support securitySchemes or security blocks.
-- Do NOT include a "security:" block anywhere (root level or per-operation)
-- Do NOT include "securitySchemes:" anywhere in the YAML
-- Do NOT include any auth-related fields under "components:"
-- The ZIA runtime handles authentication separately — leave it out entirely
+Do NOT generate any security or securitySchemes sections.
+The post-processing pipeline will inject a standardized Zoho OAuth2 security definition
+at the correct location automatically. If you add security yourself, it will be stripped
+and replaced — so omitting it saves tokens and avoids placement errors.
 
 === ZOHO-SPECIFIC RULES ===
 - Standard Zoho auth header: Authorization (Zoho-oauthtoken {token}) — declare as OAuth2, not apiKey
@@ -115,7 +114,7 @@ ZIA Agent Studio does NOT support securitySchemes or security blocks.
 Before outputting, mentally verify:
 1. openapi: 3.0.1 is the first line
 2. Every path has at least one operation with a unique operationId
-3. No "security:" or "securitySchemes:" anywhere in the output
+3. No "security:" or "securitySchemes:" in YOUR output (post-processing adds them)
 4. Every array property has items defined
 5. No integer type for any Zoho ID field
 6. $ref is used for Contact, Ticket, and other reusable objects
