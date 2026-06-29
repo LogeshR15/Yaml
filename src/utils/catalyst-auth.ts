@@ -27,7 +27,12 @@ function getAuth(): CatalystAuth | undefined {
   return (window as unknown as CatalystWindow).catalyst?.auth;
 }
 
-/** True once Slate has injected the Catalyst SDK (deployed site only). */
+/** True once Slate has injected window.catalyst (the .auth sub-module may still be loading). */
+export function isCatalystPresent(): boolean {
+  return !!(window as unknown as CatalystWindow).catalyst;
+}
+
+/** True once the auth module is ready and callable. */
 export function isSdkAvailable(): boolean {
   return !!getAuth();
 }

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Copy, Download, RefreshCw, CheckCheck,
-  AlertTriangle, AlertCircle, Cpu, ExternalLink
+  AlertTriangle, AlertCircle, Cpu, ExternalLink, Lock
 } from 'lucide-react';
 import type { GenerateResult } from '@/utils/gemini';
 
@@ -172,9 +172,12 @@ const YamlResult: React.FC<YamlResultProps> = ({
         </button>
         <button
           onClick={handleDownload}
+          title={sdkAvailable && !isAuthenticated ? 'Sign in to download' : undefined}
           className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
         >
-          <Download className="w-4 h-4" /> Download .yaml
+          {sdkAvailable && !isAuthenticated
+            ? <><Lock className="w-4 h-4" /> Download .yaml</>
+            : <><Download className="w-4 h-4" /> Download .yaml</>}
         </button>
         <button
           onClick={openInSwaggerEditor}
