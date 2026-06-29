@@ -1,6 +1,7 @@
 {
-  "name": "yaml-studio",
-  "version": "0.0.1",
+  "name": "zia-yaml-studio",
+  "version": "1.0.0",
+  "description": "Convert Zoho API docs to OpenAPI 3.0.1 YAML for ZIA Agent Studio",
   "homepage": "https://yaml-roljsobe.onslate.in",
   "login_redirect": "https://yaml-roljsobe.onslate.in"
 }

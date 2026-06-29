@@ -315,6 +315,8 @@ No explanations, no markdown fences, no text before or after the YAML.
 `).map(r=>{if(!/:\s+'/.test(r)||(r.match(/'/g)||[]).length%2===0)return r;const i=r.trimEnd();return/:\s*'$/.test(i)?i.replace(/:\s*'$/,": 'example-value'"):i+"'"}).join(`
 `),n=n.split(`
 `).filter(r=>!/^\s*["']\s*$/.test(r)).join(`
+`),n=n.split(`
+`).map(r=>{const l=r.match(/^(\s*\w+:\s+)(.+)$/);if(!l)return r;const[,i,u]=l;return/^["'{]/.test(u)||/^\d+$/.test(u)||u==="null"||u==="true"||u==="false"?r:u.includes(":")&&!u.includes('"')&&!u.includes("'")?i+`"${u}"`:r}).join(`
 `),n=Em(n),n.trim()}function Sm(e){const n=[];for(let t=0;t<e.length;t++){const r=e.charCodeAt(t);if(r===9){n.push("  ");continue}if(r===160){n.push(" ");continue}if(!(r===8203||r===8204||r===8205||r===65279)){if(r===8232||r===8233){n.push(`
 `);continue}n.push(e[t])}}return n.join("")}function Em(e){const n=e.split(`
 `),t=n.findIndex(E=>/^security:\s*$/.test(E));if(t===-1)return e;let r=n.length;for(let E=t+1;E<n.length;E++){const I=n[E];if(I.length>0&&!/^\s/.test(I)){r=E;break}}const l=n.slice(t,r).join(`
