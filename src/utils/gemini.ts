@@ -5,17 +5,17 @@ import { sanitizeYaml } from './sanitizeYaml';
 export const GEMINI_KEY_STORAGE = 'zia_yaml_gemini_key';
 
 /**
- * Ordered list of Gemini models to try.
- * Older/smaller models (gemini-pro, 1.5-flash) tend to have
- * more stable availability on the free tier.
+ * Ordered list of Gemini models to try, with each model's max output token budget.
+ * Lead with high-capacity models (2.5 family supports up to 65536 output tokens) so
+ * large API docs produce a COMPLETE spec — older 8192-cap models truncate big specs
+ * mid-output, which fails ZIA validation with confusing "responses is missing" errors.
  */
 const MODELS = [
-  { api: 'v1beta', name: 'gemini-1.5-flash' },
-  { api: 'v1beta', name: 'gemini-pro' },
-  { api: 'v1beta', name: 'gemini-1.5-flash-latest' },
-  { api: 'v1beta', name: 'gemini-2.0-flash-lite' },
-  { api: 'v1beta', name: 'gemini-2.5-flash-lite' },
-  { api: 'v1beta', name: 'gemini-2.5-flash' },
+  { api: 'v1beta', name: 'gemini-2.5-flash', maxTokens: 65536 },
+  { api: 'v1beta', name: 'gemini-2.5-flash-lite', maxTokens: 65536 },
+  { api: 'v1beta', name: 'gemini-2.0-flash', maxTokens: 8192 },
+  { api: 'v1beta', name: 'gemini-2.0-flash-lite', maxTokens: 8192 },
+  { api: 'v1beta', name: 'gemini-1.5-flash', maxTokens: 8192 },
 ];
 
 /** Status codes that mean "try the next model" */
@@ -36,9 +36,9 @@ function stripMarkdownFences(text: string): string {
 /** Returns null when we should try the next model. Throws on hard failures. */
 async function callModel(
   apiKey: string,
-  model: { api: string; name: string },
+  model: { api: string; name: string; maxTokens: number },
   prompt: string
-): Promise<{ text: string; modelUsed: string } | null> {
+): Promise<{ text: string; modelUsed: string; truncated: boolean } | null> {
   const url = `https://generativelanguage.googleapis.com/${model.api}/models/${model.name}:generateContent?key=${apiKey}`;
 
   let res: Response;
@@ -48,7 +48,7 @@ async function callModel(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: `${SYSTEM_PROMPT}\n\n${prompt}` }] }],
-        generationConfig: { maxOutputTokens: 8192, temperature: 0.1 },
+        generationConfig: { maxOutputTokens: model.maxTokens, temperature: 0.1 },
       }),
     });
   } catch {
@@ -72,10 +72,16 @@ async function callModel(
   }
 
   const data = await res.json();
-  const raw: string | undefined = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  const candidate = data.candidates?.[0];
+  const raw: string | undefined = candidate?.content?.parts?.[0]?.text;
   if (!raw) return null;
 
-  return { text: sanitizeYaml(stripMarkdownFences(raw)), modelUsed: model.name };
+  // finishReason MAX_TOKENS means the model hit its output ceiling mid-spec — the YAML
+  // is incomplete (missing responses, schemas, etc.). Flag it so the caller can try a
+  // larger-capacity model instead of returning broken YAML.
+  const truncated = candidate?.finishReason === 'MAX_TOKENS';
+
+  return { text: sanitizeYaml(stripMarkdownFences(raw)), modelUsed: model.name, truncated };
 }
 
 export interface GenerateResult {
@@ -110,6 +116,15 @@ export async function generateYaml(
     }
 
     if (!result) continue; // Model unavailable — try next
+
+    // Output hit the token ceiling and is incomplete — record it and try a bigger model.
+    if (result.truncated) {
+      lastYaml = result.text;
+      lastError =
+        'The generated spec exceeded the model output limit and was cut off. ' +
+        'Try splitting the documentation into fewer endpoints per generation.';
+      continue;
+    }
 
     const validation = validateOpenApiYaml(result.text);
     if (validation.valid) {
