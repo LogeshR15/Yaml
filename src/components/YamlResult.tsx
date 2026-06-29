@@ -10,9 +10,36 @@ interface YamlResultProps {
   loading: boolean;
   onRegenerate: () => void;
   toolName?: string;
+  /** Whether the user is signed in (Catalyst/Zoho). */
+  isAuthenticated: boolean;
+  /** Whether the Catalyst SDK is present — false in local dev (download ungated). */
+  sdkAvailable: boolean;
+  /** Called instead of downloading when sign-in is required first. */
+  onRequireLogin: (yaml: string, slug: string) => void;
 }
 
-const YamlResult: React.FC<YamlResultProps> = ({ result, loading, onRegenerate, toolName }) => {
+/** Turn a tool name into a safe .yaml filename slug. */
+export function slugifyToolName(toolName?: string): string {
+  return (
+    toolName?.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '') ||
+    'openapi-spec'
+  );
+}
+
+/** Trigger a browser download of YAML content as `<slug>.yaml`. */
+export function downloadYaml(yaml: string, slug: string): void {
+  const blob = new Blob([yaml], { type: 'text/yaml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${slug}.yaml`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+const YamlResult: React.FC<YamlResultProps> = ({
+  result, loading, onRegenerate, toolName, isAuthenticated, sdkAvailable, onRequireLogin,
+}) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -24,14 +51,14 @@ const YamlResult: React.FC<YamlResultProps> = ({ result, loading, onRegenerate, 
 
   const handleDownload = () => {
     if (!result?.yaml) return;
-    const slug = toolName?.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '') || 'openapi-spec';
-    const blob = new Blob([result.yaml], { type: 'text/yaml' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${slug}.yaml`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const slug = slugifyToolName(toolName);
+    // Gate download behind sign-in, but only when the SDK is actually available
+    // (i.e. on the deployed Slate site). In local dev, download is ungated.
+    if (sdkAvailable && !isAuthenticated) {
+      onRequireLogin(result.yaml, slug);
+      return;
+    }
+    downloadYaml(result.yaml, slug);
   };
 
   const openInSwaggerEditor = () => {

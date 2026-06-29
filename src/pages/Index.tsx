@@ -1,18 +1,51 @@
-import React, { useState } from 'react';
-import { Wand2, BookOpen, ChevronRight } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Wand2, BookOpen, ChevronRight, LogIn, LogOut } from 'lucide-react';
 import KeySetup from '@/components/KeySetup';
 import DocsInput from '@/components/DocsInput';
-import YamlResult from '@/components/YamlResult';
+import YamlResult, { downloadYaml, slugifyToolName } from '@/components/YamlResult';
+import LoginModal from '@/components/LoginModal';
 import { generateYaml, GEMINI_KEY_STORAGE, type GenerateResult } from '@/utils/gemini';
 import { ZOHO_PRODUCTS } from '@/utils/constants';
+import { useAuth } from '@/utils/AuthContext';
+
+/** sessionStorage key holding a generation pending download across the post-login reload. */
+const PENDING_DOWNLOAD_KEY = 'ziaPendingDownload';
 
 const Index: React.FC = () => {
+  const { user, loading: authLoading, sdkAvailable, signOut } = useAuth();
   const [apiKey, setApiKey] = useState(localStorage.getItem(GEMINI_KEY_STORAGE) || '');
   const [toolName, setToolName] = useState('');
   const [docs, setDocs] = useState('');
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [loginOpen, setLoginOpen] = useState(false);
+
+  // After the Catalyst sign-in reload, restore the saved generation and auto-download.
+  useEffect(() => {
+    if (authLoading || !user) return;
+    const raw = sessionStorage.getItem(PENDING_DOWNLOAD_KEY);
+    if (!raw) return;
+    sessionStorage.removeItem(PENDING_DOWNLOAD_KEY);
+    try {
+      const pending = JSON.parse(raw) as { result: GenerateResult; toolName: string };
+      setResult(pending.result);
+      setToolName(pending.toolName);
+      if (pending.result?.yaml) {
+        downloadYaml(pending.result.yaml, slugifyToolName(pending.toolName));
+      }
+    } catch {
+      // Corrupt payload — ignore; the user can regenerate.
+    }
+  }, [authLoading, user]);
+
+  // Save the current generation and open the sign-in widget (called from the Download button).
+  const handleRequireLogin = () => {
+    if (result) {
+      sessionStorage.setItem(PENDING_DOWNLOAD_KEY, JSON.stringify({ result, toolName }));
+    }
+    setLoginOpen(true);
+  };
 
   const handleGenerate = async () => {
     const key = apiKey || localStorage.getItem(GEMINI_KEY_STORAGE);
@@ -47,6 +80,29 @@ const Index: React.FC = () => {
       <header className="border-b border-gray-200 bg-white sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <h2 className="text-lg font-bold text-gray-900">ZIA YAML Studio</h2>
+
+          {!authLoading && sdkAvailable && (
+            user ? (
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-gray-600">
+                  {user.first_name || user.email_id}
+                </span>
+                <button
+                  onClick={signOut}
+                  className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-red-600 border border-gray-300 hover:border-red-300 rounded-lg px-3 py-1.5 transition-colors"
+                >
+                  <LogOut className="w-4 h-4" /> Sign out
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setLoginOpen(true)}
+                className="flex items-center gap-1.5 text-sm text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-lg px-3 py-1.5 transition-colors"
+              >
+                <LogIn className="w-4 h-4" /> Sign in
+              </button>
+            )
+          )}
         </div>
       </header>
 
@@ -151,6 +207,9 @@ const Index: React.FC = () => {
               loading={loading}
               onRegenerate={handleRegenerate}
               toolName={toolName}
+              isAuthenticated={!!user}
+              sdkAvailable={sdkAvailable}
+              onRequireLogin={handleRequireLogin}
             />
           </div>
         </div>
@@ -161,6 +220,15 @@ const Index: React.FC = () => {
           Uses Google Gemini (your own API key, free tier)
         </p>
       </main>
+
+      <LoginModal
+        open={loginOpen}
+        sdkAvailable={sdkAvailable}
+        onClose={() => {
+          setLoginOpen(false);
+          sessionStorage.removeItem(PENDING_DOWNLOAD_KEY);
+        }}
+      />
     </div>
   );
 };
