@@ -47,7 +47,24 @@ export function sanitizeYaml(raw: string): string {
     .filter((line) => !/^\s*["']\s*$/.test(line))
     .join('\n');
 
-  // 7. Fix incorrectly structured root-level security block.
+  // 7. Quote unquoted values that contain colons (YAML special char).
+  text = text
+    .split('\n')
+    .map((line) => {
+      const colonMatch = line.match(/^(\s*\w+:\s+)(.+)$/);
+      if (!colonMatch) return line;
+      const [, prefix, value] = colonMatch;
+      if (/^["'{]/.test(value) || /^\d+$/.test(value) || value === 'null' || value === 'true' || value === 'false') {
+        return line;
+      }
+      if (value.includes(':') && !value.includes('"') && !value.includes("'")) {
+        return prefix + `"${value}"`;
+      }
+      return line;
+    })
+    .join('\n');
+
+  // 8. Fix incorrectly structured root-level security block.
   text = fixSecurityBlock(text);
 
   return text.trim();
