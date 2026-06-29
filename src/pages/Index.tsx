@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Wand2, BookOpen, ChevronRight } from 'lucide-react';
-import Navbar from '@/components/Navbar';
 import KeySetup from '@/components/KeySetup';
 import DocsInput from '@/components/DocsInput';
 import YamlResult from '@/components/YamlResult';
@@ -45,7 +44,11 @@ const Index: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Navbar />
+      <header className="border-b border-gray-200 bg-white sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-gray-900">ZIA YAML Studio</h2>
+        </div>
+      </header>
 
       <main className="max-w-6xl mx-auto px-4 py-8 space-y-6">
 

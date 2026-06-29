@@ -1,11 +1,4 @@
 {
-  "functions": {
-    "targets": [
-      "yaml_api"
-    ],
-    "ignore": [],
-    "source": "functions"
-  },
   "slate": [
     {
       "name": "yaml",
