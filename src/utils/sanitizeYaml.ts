@@ -164,7 +164,7 @@ const ZOHO_SECURITY_SCHEMES = `  securitySchemes:
 function injectSecurity(text: string): string {
   // Root security block — insert immediately before paths:
   if (!/^security:/m.test(text) && /^paths:/m.test(text)) {
-    text = text.replace(/^paths:/m, 'security:\n  - ZohoOAuth: []\npaths:');
+    text = text.replace(/^paths:/m, 'security:\n  - ZohoOAuth:\n      - ZohoAPI.fullaccess.all\npaths:');
   }
 
   // securitySchemes — append at the end of the document.
