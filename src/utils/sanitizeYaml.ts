@@ -64,8 +64,12 @@ export function sanitizeYaml(raw: string): string {
     })
     .join('\n');
 
-  // 8. Strip any security/securitySchemes Gemini generated (often in wrong location).
-  //    Step 9 will inject a standardized replacement, so we always get correct security.
+  // 8. Extract the OAuth scope Gemini generated BEFORE stripping — it usually gets the
+  //    scope right (e.g. ZohoCRM.modules.ALL) even when placement is wrong.
+  const detectedScope = extractOAuthScope(text);
+
+  // Strip any security/securitySchemes Gemini generated (often in wrong location).
+  // Step 11 re-injects a correctly placed version using the scope extracted above.
   text = removeSecurityFields(text);
 
   // 9. Fix $ref incorrectly placed as a key inside properties: — it must be at the parent level.
@@ -77,10 +81,12 @@ export function sanitizeYaml(raw: string): string {
   //     it in description + content/schema. ZIA rejects: "400": { $ref: '.../schemas/Foo' }
   text = fixResponseSchemaRefs(text);
 
-  // 11. Inject standardized Zoho OAuth2 security — ZIA Agent Studio requires a security
-  //     definition. We inject a canonical version rather than trusting Gemini to place it
-  //     correctly (it frequently nests securitySchemes inside schemas: instead of components:).
-  text = injectSecurity(text);
+  // 11. Inject standardized Zoho OAuth2 security using the scope detected in step 8.
+  text = injectSecurity(text, detectedScope);
+
+  // 12. Add x-zia-agent-param-type: system to path parameters — tells ZIA Agent to
+  //     resolve these values from conversation context instead of prompting the user.
+  text = addSystemParamTags(text);
 
   return text.trim();
 }
@@ -139,42 +145,72 @@ function fixResponseSchemaRefs(text: string): string {
   );
 }
 
-const ZOHO_SECURITY_SCHEMES = `  securitySchemes:
-    ZohoOAuth:
-      type: oauth2
-      flows:
-        authorizationCode:
-          authorizationUrl: https://accounts.zoho.com/oauth/v2/auth
-          tokenUrl: https://accounts.zoho.com/oauth/v2/token
-          scopes:
-            ZohoAPI.fullaccess.all: Full access to Zoho APIs`;
+/**
+ * Extract the OAuth scope from Gemini's raw output before we strip the security block.
+ * Gemini usually picks the correct product scope (e.g. ZohoCRM.modules.ALL, Desk.tickets.ALL)
+ * from the API docs, even when it places the security block in the wrong location.
+ */
+function extractOAuthScope(text: string): string {
+  // Match scope keys inside a scopes: block (indented 8+ spaces): ZohoCRM.modules.ALL: description
+  const inSchemes = text.match(/scopes:\s*\n\s+([A-Za-z][\w]+(?:\.[\w]+)+)\s*:/);
+  if (inSchemes?.[1]) return inSchemes[1];
+
+  // Match list items in a security: block: - ZohoCRM.modules.ALL
+  const lines = text.split('\n');
+  const secIdx = lines.findIndex((l) => /^security:\s*$/.test(l));
+  if (secIdx !== -1) {
+    for (let i = secIdx + 1; i < Math.min(secIdx + 8, lines.length); i++) {
+      const m = lines[i].match(/^\s*-\s+([A-Za-z][\w]+(?:\.[\w]+)+)\s*$/);
+      if (m?.[1]) return m[1];
+    }
+  }
+
+  return 'ZohoAPI.fullaccess.all';
+}
 
 /**
- * Inject a canonical root-level security block and securitySchemes under components:.
- * ZIA Agent Studio requires security to be present. We always strip Gemini's version
- * (step 8) and inject a consistent one here so placement is always correct.
+ * Inject a canonical security block using the scope detected from Gemini's output.
  *
  * Structure injected:
  *   security:               ← root level, before paths:
- *     - ZohoOAuth: []
+ *     - ZohoOAuth:
+ *         - <detected scope>
  *   components:
  *     schemas: ...          ← existing
- *     securitySchemes: ...  ← appended here (sibling of schemas, NOT inside it)
+ *     securitySchemes: ...  ← appended (sibling of schemas, NOT inside it)
  */
-function injectSecurity(text: string): string {
-  // Root security block — insert immediately before paths:
+function injectSecurity(text: string, scope = 'ZohoAPI.fullaccess.all'): string {
   if (!/^security:/m.test(text) && /^paths:/m.test(text)) {
-    text = text.replace(/^paths:/m, 'security:\n  - ZohoOAuth:\n      - ZohoAPI.fullaccess.all\npaths:');
+    text = text.replace(/^paths:/m, `security:\n  - ZohoOAuth:\n      - ${scope}\npaths:`);
   }
 
-  // securitySchemes — append at the end of the document.
-  // components: is always the last top-level section in OpenAPI 3.0.1, so appending
-  // with 2-space indent places it as a direct child of components: (sibling of schemas:).
   if (!/securitySchemes:/m.test(text) && /^components:/m.test(text)) {
-    text = text.trimEnd() + '\n' + ZOHO_SECURITY_SCHEMES;
+    const schemes = `  securitySchemes:\n    ZohoOAuth:\n      type: oauth2\n      flows:\n        authorizationCode:\n          authorizationUrl: https://accounts.zoho.com/oauth/v2/auth\n          tokenUrl: https://accounts.zoho.com/oauth/v2/token\n          scopes:\n            ${scope}: Access to Zoho APIs`;
+    text = text.trimEnd() + '\n' + schemes;
   }
 
   return text;
+}
+
+/**
+ * Add x-zia-agent-param-type: system immediately after every "in: path" line.
+ * This tells ZIA Agent to resolve the parameter from conversation context automatically,
+ * rather than prompting the user to enter a value each time.
+ */
+function addSystemParamTags(text: string): string {
+  const lines = text.split('\n');
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    out.push(lines[i]);
+    if (/^\s+in: path\s*$/.test(lines[i])) {
+      const next = lines[i + 1] ?? '';
+      if (!next.includes('x-zia-agent-param-type:')) {
+        const indent = ' '.repeat(lines[i].length - lines[i].trimStart().length);
+        out.push(`${indent}x-zia-agent-param-type: system`);
+      }
+    }
+  }
+  return out.join('\n');
 }
 
 /**

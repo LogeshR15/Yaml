@@ -51,6 +51,15 @@ Zoho ZIA Agent Studio.
 
 === PARAMETERS ===
 - Every parameter needs: name, in, required, description, schema
+- Path parameters MUST include: x-zia-agent-param-type: system
+  This tells ZIA Agent to resolve the value from context instead of prompting the user:
+    - name: record_id
+      in: path
+      required: true
+      description: Unique 18-digit ID of the record.
+      schema:
+        type: string
+      x-zia-agent-param-type: system
 - description must explain the value shape and purpose:
   Good: "Unique ticket ID returned by listTickets. Format: 18-digit numeric string."
   Bad:  "ticket id"
@@ -101,10 +110,14 @@ Zoho ZIA Agent Studio.
 - Never use circular $ref chains
 
 === SECURITY ===
-Do NOT generate any security or securitySchemes sections.
-The post-processing pipeline will inject a standardized Zoho OAuth2 security definition
-at the correct location automatically. If you add security yourself, it will be stripped
-and replaced — so omitting it saves tokens and avoids placement errors.
+Include a security block with the correct product-specific scope from the documentation.
+The post-processing pipeline will fix placement — focus on getting the scope name right.
+Examples of correct Zoho OAuth scopes:
+  ZohoCRM.modules.ALL       (CRM)
+  Desk.tickets.ALL          (Zoho Desk)
+  ZohoBooks.fullaccess.all  (Zoho Books)
+  ZohoFSM.fullaccess.all    (Field Service)
+Use the scope shown in the docs' "Scope" or "Authorization" section, not a generic one.
 
 === ZOHO-SPECIFIC RULES ===
 - Standard Zoho auth header: Authorization (Zoho-oauthtoken {token}) — declare as OAuth2, not apiKey
