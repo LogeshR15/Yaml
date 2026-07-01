@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Wand2, BookOpen, ChevronRight, LogIn, LogOut } from 'lucide-react';
+import { Wand2, BookOpen, ChevronRight, LogIn, LogOut, Mail } from 'lucide-react';
 import KeySetup from '@/components/KeySetup';
 import DocsInput from '@/components/DocsInput';
 import YamlResult, { downloadYaml, slugifyToolName } from '@/components/YamlResult';
@@ -81,28 +81,37 @@ const Index: React.FC = () => {
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <h2 className="text-lg font-bold text-gray-900">ZIA YAML Studio</h2>
 
-          {!authLoading && sdkAvailable && (
-            user ? (
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-gray-600">
-                  {user.first_name || user.email_id}
-                </span>
+          <div className="flex items-center gap-3">
+            <a
+              href="#contact"
+              className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-blue-600 border border-gray-300 hover:border-blue-300 rounded-lg px-3 py-1.5 transition-colors"
+            >
+              <Mail className="w-4 h-4" /> Contact
+            </a>
+
+            {!authLoading && sdkAvailable && (
+              user ? (
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-gray-600">
+                    {user.first_name || user.email_id}
+                  </span>
+                  <button
+                    onClick={signOut}
+                    className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-red-600 border border-gray-300 hover:border-red-300 rounded-lg px-3 py-1.5 transition-colors"
+                  >
+                    <LogOut className="w-4 h-4" /> Sign out
+                  </button>
+                </div>
+              ) : (
                 <button
-                  onClick={signOut}
-                  className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-red-600 border border-gray-300 hover:border-red-300 rounded-lg px-3 py-1.5 transition-colors"
+                  onClick={() => setLoginOpen(true)}
+                  className="flex items-center gap-1.5 text-sm text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-lg px-3 py-1.5 transition-colors"
                 >
-                  <LogOut className="w-4 h-4" /> Sign out
+                  <LogIn className="w-4 h-4" /> Sign in
                 </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setLoginOpen(true)}
-                className="flex items-center gap-1.5 text-sm text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-lg px-3 py-1.5 transition-colors"
-              >
-                <LogIn className="w-4 h-4" /> Sign in
-              </button>
-            )
-          )}
+              )
+            )}
+          </div>
         </div>
       </header>
 
@@ -215,10 +224,18 @@ const Index: React.FC = () => {
         </div>
 
         {/* Footer note */}
-        <p className="text-center text-xs text-gray-400 pb-4">
-          Generated YAML targets OpenAPI 3.0.1 · Compatible with ZIA Agent Studio custom tools ·
-          Uses Google Gemini (your own API key, free tier)
-        </p>
+        <div className="text-center text-xs text-gray-400 pb-4 space-y-2">
+          <p>
+            Generated YAML targets OpenAPI 3.0.1 · Compatible with ZIA Agent Studio custom tools ·
+            Uses Google Gemini (your own API key, free tier)
+          </p>
+          <p>
+            Built with Claude Code · Hosted on Catalyst Slate ·{' '}
+            <a href="#contact" className="text-blue-600 hover:text-blue-700 font-semibold">
+              Contact
+            </a>
+          </p>
+        </div>
       </main>
 
       <LoginModal
