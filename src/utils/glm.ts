@@ -37,7 +37,7 @@ function extractText(data: any): string | null {
 
 async function callGlm(
   userPrompt: string,
-  maxTokens = 16384
+  maxTokens = 8192
 ): Promise<{ text: string }> {
   let res: Response;
   try {
@@ -89,21 +89,6 @@ export async function generateYaml(docs: string): Promise<GenerateResult> {
   const result = await callGlm(userPrompt);
 
   const validation = validateOpenApiYaml(result.text);
-  if (validation.valid) {
-    return { yaml: result.text, modelUsed: GLM_MODEL, validation };
-  }
-
-  // Retry once with a stricter prompt suffix
-  const retryPrompt = `${userPrompt}${RETRY_PROMPT_SUFFIX}`;
-  try {
-    const retry = await callGlm(retryPrompt);
-    const rv = validateOpenApiYaml(retry.text);
-    if (rv.valid || retry.text.includes('openapi')) {
-      return { yaml: retry.text, modelUsed: GLM_MODEL, validation: rv };
-    }
-  } catch {
-    /* fall through — return first result */
-  }
 
   if (result.text.includes('openapi')) {
     return { yaml: result.text, modelUsed: GLM_MODEL, validation };

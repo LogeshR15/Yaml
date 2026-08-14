@@ -26,7 +26,7 @@ function getBody(req) {
   });
 }
 
-function httpsPost(url, headers, body) {
+function httpsPost(url, headers, body, timeoutMs = 25000) {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
     const payload = JSON.stringify(body);
@@ -34,6 +34,7 @@ function httpsPost(url, headers, body) {
       hostname: parsed.hostname,
       path: parsed.pathname,
       method: 'POST',
+      timeout: timeoutMs,
       headers: {
         ...headers,
         'Content-Type': 'application/json',
@@ -45,6 +46,7 @@ function httpsPost(url, headers, body) {
       r.on('data', (chunk) => { data += chunk; });
       r.on('end', () => resolve({ status: r.statusCode, body: data }));
     });
+    reqHttp.on('timeout', () => { reqHttp.destroy(); reject(new Error('GLM request timed out after 25s')); });
     reqHttp.on('error', reject);
     reqHttp.write(payload);
     reqHttp.end();
