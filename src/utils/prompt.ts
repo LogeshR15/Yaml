@@ -20,12 +20,21 @@ Zoho ZIA Agent Studio.
 - The very first line must be: openapi: 3.0.1
 - Use 2-space indentation throughout
 
+=== BE ECONOMICAL (HARD REQUIREMENT) ===
+The output is size-limited. A spec that runs long gets truncated mid-file and is
+useless. Completeness of the ESSENTIALS beats richness of detail. Therefore:
+- Document ONLY what the documentation actually states. Never invent fields,
+  parameters, endpoints, or response properties that the docs do not mention.
+- Do NOT pad response schemas with plausible-sounding extra fields.
+- Prefer a short spec that ends properly over a detailed one that gets cut off.
+- No blank lines, no YAML comments.
+
 === VERSION ===
 - Always use: openapi: 3.0.1  (ZIA Agent Studio requires exactly this version)
 
 === INFO BLOCK ===
 - info.title: short product + resource name (e.g. "Zoho Desk Tickets")
-- info.description: 2-3 sentences explaining what this API covers and what a ZIA agent can do with it
+- info.description: ONE short sentence naming what this API covers
 - info.version: "1.0.0"
 
 === SERVERS ===
@@ -39,13 +48,10 @@ Zoho ZIA Agent Studio.
   Bad:  get_1, contacts, example.api.V1.GetTicket, getV1TicketsId
   Allowed characters: letters, hyphens, underscores only — no dots or spaces
 - summary: short verb-noun phrase (< 10 words)
-- description: CRITICAL — write 3-5 sentences that explain:
-  1. What the operation returns or does
-  2. When a ZIA agent should call this (vs similar operations)
-  3. What to call BEFORE this (pre-requisites, e.g. "Call listTickets first to get the ticket ID")
-  4. Any important limits or side effects
+- description: 1-2 sentences — what the operation does, plus any prerequisite
+  operation the agent must call first (reference it by operationId). This is the
+  main signal ZIA uses to pick the tool, so make it precise, not long.
   Do NOT include external URLs or API path strings in descriptions.
-  Reference other operations by their operationId.
 - tags: add one tag per operation matching the resource name (e.g. ["Tickets"], ["Contacts"])
 - Max 10 parameters per operation — consolidate where possible
 
@@ -67,7 +73,7 @@ Zoho ZIA Agent Studio.
 - Query/header parameters: set required correctly based on the docs
 - Date fields: always add schema.format: date  (YYYY-MM-DD) or format: date-time
 - Fixed-value fields: always add schema.enum array listing all valid values
-- Add schema.example on every parameter with a SHORT, realistic value — NO long strings, NO sentences
+- Add schema.example ONLY on ID and enum parameters, with a SHORT value — NO long strings, NO sentences
   Use bare unquoted values where possible:
     example: 2389290          ← orgId (short numeric string, no quotes needed)
     example: 1892000000042032 ← ticketId
@@ -92,15 +98,42 @@ Zoho ZIA Agent Studio.
   - required array must be accurate — only include truly mandatory fields
 
 === RESPONSES ===
-- Always include: "200" (or "201" for POST), "400", "401", "403", "404"
-- 200/201: include a content schema with realistic response properties
-- Response schemas should have at minimum: id, key status/state fields, and timestamps
-- Never leave a response schema with only one or two fields — expand it realistically
-- NEVER use $ref directly at the response level pointing to schemas/ — always use description + content/schema:
-  WRONG: "400": { $ref: '#/components/schemas/ErrorResponse' }
-  RIGHT: "400": { description: Bad Request, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+- Include ONLY "200" (or "201" for POST), "400" and "401". Do not add 403/404/500
+  unless the documentation explicitly documents them.
+- 200/201: content schema containing ONLY response fields the documentation
+  explicitly lists by name.
+- ABSOLUTE RULE — NEVER invent response field names. Do not guess at fields like
+  Status, Created_Time, Type_ID or Name because they seem plausible for the
+  resource. Inventing response fields is the single most common failure here and
+  it makes the output run past the size limit and get truncated.
+- If the documentation does NOT list the response fields (most Zoho list
+  endpoints do not), the 200 response MUST be exactly this and nothing more:
+    "200":
+      description: Success — returns the requested records.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data:
+                type: array
+                items:
+                  type: object
+- Never emit more than 8 properties in any single schema.
+- "400" and "401" must be description-only — a single line, NO content block and
+  NO schema. Example:
+    "400":
+      description: Bad Request — invalid or missing parameters.
+    "401":
+      description: Unauthorized — invalid or expired OAuth token.
+- NEVER use $ref directly at the response level pointing to schemas/ — a response
+  needs description, and content/schema is where a $ref may appear:
+  WRONG: "200": { $ref: '#/components/schemas/ReportList' }
+  RIGHT: "200": { description: Success, content: { application/json: { schema: { $ref: '#/components/schemas/ReportList' } } } }
 
 === COMPONENTS / SCHEMAS ===
+- If you have no reusable schemas to define, OMIT the components block entirely.
+  Never emit an empty "components: schemas: {}".
 - Define reusable schemas in components.schemas for request bodies and complex responses
 - Use $ref: '#/components/schemas/SchemaName' to reference them
 - $ref MUST be used as a sibling to type/description/items — NEVER as a key inside properties:
@@ -134,8 +167,10 @@ Before outputting, mentally verify:
 4. Every array property has items defined
 5. No integer type for any Zoho ID field
 6. $ref is used for Contact, Ticket, and other reusable objects
-7. 400 and 401 responses exist on every operation
-8. Every parameter has a description and example
+7. 400 and 401 exist as description-only responses
+8. Every parameter has a description
+9. Nothing is invented that the documentation did not state
+10. The YAML is COMPLETE — it ends mid-nothing, with no dangling key
 `.trim();
 
 export const RETRY_PROMPT_SUFFIX = `
