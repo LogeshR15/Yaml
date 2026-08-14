@@ -1,57 +1,100 @@
+'use strict';
 const catalyst = require('zcatalyst-sdk-node');
+const https = require('https');
 
 const GLM_URL =
   'https://api.catalyst.zoho.in/quickml/v1/project/17603000000084001/glm/chat';
 const CATALYST_ORG = '60039712979';
 
-module.exports = async (context, basicIO) => {
-  // Only allow POST
-  if (basicIO.getRequestMethod() !== 'POST') {
-    basicIO.setStatusCode(405);
-    basicIO.write(JSON.stringify({ error: 'Method not allowed' }));
-    return context.close();
+function sendJson(res, statusCode, data) {
+  res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(data));
+}
+
+function getBody(req) {
+  return new Promise((resolve, reject) => {
+    if (req.body && typeof req.body === 'object') return resolve(req.body);
+    if (req.body && typeof req.body === 'string') {
+      try { return resolve(JSON.parse(req.body)); } catch { return resolve({}); }
+    }
+    let data = '';
+    req.on('data', (chunk) => { data += chunk; });
+    req.on('end', () => {
+      try { resolve(data ? JSON.parse(data) : {}); } catch { resolve({}); }
+    });
+    req.on('error', reject);
+  });
+}
+
+function httpsPost(url, headers, body) {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const payload = JSON.stringify(body);
+    const options = {
+      hostname: parsed.hostname,
+      path: parsed.pathname,
+      method: 'POST',
+      headers: {
+        ...headers,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+      },
+    };
+    const reqHttp = https.request(options, (r) => {
+      let data = '';
+      r.on('data', (chunk) => { data += chunk; });
+      r.on('end', () => resolve({ status: r.statusCode, body: data }));
+    });
+    reqHttp.on('error', reject);
+    reqHttp.write(payload);
+    reqHttp.end();
+  });
+}
+
+module.exports = async (req, res) => {
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    return res.end();
+  }
+
+  if (req.method !== 'POST') {
+    return sendJson(res, 405, { error: 'Method not allowed' });
   }
 
   let body;
   try {
-    body = JSON.parse(basicIO.getRequestBody());
+    body = await getBody(req);
   } catch {
-    basicIO.setStatusCode(400);
-    basicIO.write(JSON.stringify({ error: 'Invalid JSON body' }));
-    return context.close();
+    return sendJson(res, 400, { error: 'Invalid JSON body' });
   }
 
-  // Get OAuth token from the Catalyst server-side SDK
-  const app = catalyst.initialize(context);
+  // Get OAuth token via a Catalyst Connection named "quickml"
   let token;
   try {
-    token = await app.getOAuthToken('QuickML.deployment.READ');
+    const app = catalyst.initialize(req, { scope: 'admin' });
+    const conn = app.connection('quickml');
+    token = await conn.getToken();
   } catch (err) {
-    basicIO.setStatusCode(500);
-    basicIO.write(JSON.stringify({ error: 'Failed to get OAuth token: ' + err.message }));
-    return context.close();
+    console.error('[glm-proxy] token error:', err);
+    return sendJson(res, 500, { error: 'Failed to get OAuth token: ' + err.message });
   }
 
-  // Forward the request to the GLM API
+  // Forward to GLM API
   let glmRes;
   try {
-    glmRes = await fetch(GLM_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+    glmRes = await httpsPost(
+      GLM_URL,
+      {
         Authorization: `Zoho-oauthtoken ${token}`,
         'CATALYST-ORG': CATALYST_ORG,
       },
-      body: JSON.stringify(body),
-    });
+      body
+    );
   } catch (err) {
-    basicIO.setStatusCode(502);
-    basicIO.write(JSON.stringify({ error: 'GLM request failed: ' + err.message }));
-    return context.close();
+    console.error('[glm-proxy] GLM request error:', err);
+    return sendJson(res, 502, { error: 'GLM request failed: ' + err.message });
   }
 
-  const glmBody = await glmRes.text();
-  basicIO.setStatusCode(glmRes.status);
-  basicIO.write(glmBody);
-  context.close();
+  res.writeHead(glmRes.status, { 'Content-Type': 'application/json' });
+  res.end(glmRes.body);
 };
