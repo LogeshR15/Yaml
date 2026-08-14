@@ -65,7 +65,14 @@ const Index: React.FC = () => {
     try {
       let token = '';
       if (sdkAvailable) {
-        token = await getAccessToken();
+        try {
+          token = await getAccessToken();
+        } catch (tokenErr) {
+          console.warn('[Auth] getAccessToken failed:', tokenErr);
+          throw new Error(
+            'Could not retrieve your Zoho session token. Try signing out and signing back in.'
+          );
+        }
       }
       const res = await generateYaml(token, docs);
       setResult(res);

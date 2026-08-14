@@ -40,7 +40,7 @@ async function callGlm(
   accessToken: string,
   userPrompt: string,
   maxTokens = 16384
-): Promise<{ text: string } | null> {
+): Promise<{ text: string }> {
   let res: Response;
   try {
     res = await fetch(GLM_URL, {
@@ -62,22 +62,29 @@ async function callGlm(
         chat_template_kwargs: { enable_thinking: false },
       }),
     });
-  } catch {
-    return null;
+  } catch (networkErr) {
+    throw new Error(`Network error: ${networkErr instanceof Error ? networkErr.message : String(networkErr)}`);
   }
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(
-      (err as { error?: { message?: string }; message?: string })?.error?.message ||
-        (err as { message?: string })?.message ||
-        `API error ${res.status}`
-    );
+    const errBody = await res.text().catch(() => '');
+    console.error('[GLM] HTTP', res.status, errBody);
+    let msg = `API error ${res.status}`;
+    try {
+      const parsed = JSON.parse(errBody);
+      msg = parsed?.error?.message || parsed?.message || msg;
+    } catch { /* not JSON */ }
+    throw new Error(msg);
   }
 
-  const data = await res.json();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data: any = await res.json();
+  console.log('[GLM] raw response:', JSON.stringify(data).slice(0, 500));
+
   const raw = extractText(data);
-  if (!raw) return null;
+  if (!raw) {
+    throw new Error(`Unexpected GLM response shape. Keys: ${Object.keys(data).join(', ')}`);
+  }
 
   return { text: sanitizeYaml(stripMarkdownFences(raw)) };
 }
@@ -88,16 +95,7 @@ export async function generateYaml(
 ): Promise<GenerateResult> {
   const userPrompt = `Convert the following Zoho API documentation into a complete, ZIA-agent-ready OpenAPI 3.0.1 YAML specification:\n\n${docs}`;
 
-  let result: { text: string } | null = null;
-  try {
-    result = await callGlm(accessToken, userPrompt);
-  } catch (err) {
-    throw new Error(err instanceof Error ? err.message : 'Generation failed. Try again.');
-  }
-
-  if (!result) {
-    throw new Error('No output received from GLM. Please try again.');
-  }
+  const result = await callGlm(accessToken, userPrompt);
 
   const validation = validateOpenApiYaml(result.text);
   if (validation.valid) {
@@ -108,11 +106,9 @@ export async function generateYaml(
   const retryPrompt = `${userPrompt}${RETRY_PROMPT_SUFFIX}`;
   try {
     const retry = await callGlm(accessToken, retryPrompt);
-    if (retry) {
-      const rv = validateOpenApiYaml(retry.text);
-      if (rv.valid || retry.text.includes('openapi')) {
-        return { yaml: retry.text, modelUsed: GLM_MODEL, validation: rv };
-      }
+    const rv = validateOpenApiYaml(retry.text);
+    if (rv.valid || retry.text.includes('openapi')) {
+      return { yaml: retry.text, modelUsed: GLM_MODEL, validation: rv };
     }
   } catch {
     /* fall through — return first result */
