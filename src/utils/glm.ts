@@ -37,7 +37,7 @@ function extractText(data: any): string | null {
 
 async function callGlm(
   userPrompt: string,
-  maxTokens = 8192
+  maxTokens = 4096
 ): Promise<{ text: string }> {
   let res: Response;
   try {
