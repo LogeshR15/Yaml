@@ -3,7 +3,7 @@ import {
   Copy, Download, RefreshCw, CheckCheck,
   AlertTriangle, AlertCircle, Cpu, ExternalLink, Lock
 } from 'lucide-react';
-import type { GenerateResult } from '@/utils/gemini';
+import type { GenerateResult } from '@/utils/glm';
 
 interface YamlResultProps {
   result: GenerateResult | null;

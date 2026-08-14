@@ -20,8 +20,17 @@ function stripMarkdownFences(text: string): string {
     .trim();
 }
 
+/**
+ * Catalyst GLM does NOT return an OpenAI-shaped body. A real response is:
+ *   { response: "openapi: 3.0.1\n...", tool_calls: [], usage: {...}, model: "..." }
+ * The OpenAI `choices[]` shape is kept only as a fallback in case the endpoint
+ * is ever switched to an OpenAI-compatible gateway.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function extractText(data: any): string | null {
+  if (typeof data?.response === 'string' && data.response.trim()) {
+    return data.response;
+  }
   const content = data?.choices?.[0]?.message?.content;
   if (!content) return null;
   if (typeof content === 'string') return content;
@@ -35,10 +44,18 @@ function extractText(data: any): string | null {
   return null;
 }
 
+/**
+ * Measured throughput of crm-di-glm47b_30b_it is ~53 output tokens/sec, and the
+ * Advanced I/O function that proxies this call is killed at 30s (hard Catalyst
+ * limit, not configurable). 1300 tokens ≈ 25s, which fits inside that window.
+ * Raising this trades a complete spec for a guaranteed 408.
+ */
+const MAX_OUTPUT_TOKENS = 1300;
+
 async function callGlm(
   userPrompt: string,
-  maxTokens = 4096
-): Promise<{ text: string }> {
+  maxTokens = MAX_OUTPUT_TOKENS
+): Promise<{ text: string; truncated: boolean }> {
   let res: Response;
   try {
     res = await fetch(PROXY_URL, {
@@ -63,24 +80,37 @@ async function callGlm(
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
     console.error('[GLM] HTTP', res.status, errBody);
+
+    // 408 is the Catalyst function being killed at its 30s ceiling, not a model error.
+    if (res.status === 408 || errBody.includes('EXECUTION_TIME_EXCEEDED')) {
+      throw new Error(
+        'Generation took longer than the 30-second server limit. Paste fewer endpoints ' +
+          '(one or two at a time) and generate them separately.'
+      );
+    }
+
     let msg = `API error ${res.status}`;
     try {
       const parsed = JSON.parse(errBody);
-      msg = parsed?.error?.message || parsed?.message || msg;
+      msg = parsed?.error?.message || parsed?.error || parsed?.message || msg;
     } catch { /* not JSON */ }
     throw new Error(msg);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data: any = await res.json();
-  console.log('[GLM] raw response:', JSON.stringify(data).slice(0, 500));
+  console.log('[GLM] usage:', JSON.stringify(data?.usage));
 
   const raw = extractText(data);
   if (!raw) {
     throw new Error(`Unexpected GLM response shape. Keys: ${Object.keys(data).join(', ')}`);
   }
 
-  return { text: sanitizeYaml(stripMarkdownFences(raw)) };
+  // Hitting the ceiling exactly means the spec was cut off mid-output.
+  const completion = Number(data?.usage?.completion_tokens ?? 0);
+  const truncated = completion >= maxTokens;
+
+  return { text: sanitizeYaml(stripMarkdownFences(raw)), truncated };
 }
 
 export async function generateYaml(docs: string): Promise<GenerateResult> {
@@ -91,6 +121,15 @@ export async function generateYaml(docs: string): Promise<GenerateResult> {
   const validation = validateOpenApiYaml(result.text);
 
   if (result.text.includes('openapi')) {
+    // Still return the YAML — a partial spec is often useful — but say so loudly
+    // rather than letting the user upload a silently truncated file to ZIA.
+    if (result.truncated) {
+      validation.warnings = [
+        `Output was cut off at the ${MAX_OUTPUT_TOKENS}-token limit — this spec is incomplete. ` +
+          'Paste fewer endpoints and generate them one at a time.',
+        ...validation.warnings,
+      ];
+    }
     return { yaml: result.text, modelUsed: GLM_MODEL, validation };
   }
 
