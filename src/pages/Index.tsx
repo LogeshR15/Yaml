@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Wand2, BookOpen, ChevronRight, LogIn, LogOut, Mail } from 'lucide-react';
-import KeySetup from '@/components/KeySetup';
 import DocsInput from '@/components/DocsInput';
 import YamlResult, { downloadYaml, slugifyToolName } from '@/components/YamlResult';
 import LoginModal from '@/components/LoginModal';
-import { generateYaml, GEMINI_KEY_STORAGE, type GenerateResult } from '@/utils/gemini';
+import { generateYaml, type GenerateResult } from '@/utils/glm';
+import { getAccessToken } from '@/utils/catalyst-auth';
 import { ZOHO_PRODUCTS } from '@/utils/constants';
 import { useAuth } from '@/utils/AuthContext';
 
@@ -13,7 +13,6 @@ const PENDING_DOWNLOAD_KEY = 'ziaPendingDownload';
 
 const Index: React.FC = () => {
   const { user, loading: authLoading, sdkAvailable, signOut } = useAuth();
-  const [apiKey, setApiKey] = useState(localStorage.getItem(GEMINI_KEY_STORAGE) || '');
   const [toolName, setToolName] = useState('');
   const [docs, setDocs] = useState('');
   const [result, setResult] = useState<GenerateResult | null>(null);
@@ -48,20 +47,27 @@ const Index: React.FC = () => {
   };
 
   const handleGenerate = async () => {
-    const key = apiKey || localStorage.getItem(GEMINI_KEY_STORAGE);
-    if (!key) {
-      setError('Please save your Gemini API key first.');
-      return;
-    }
     if (!docs.trim()) {
       setError('Please paste your API documentation first.');
+      return;
+    }
+    // On the deployed site, require sign-in to obtain an OAuth token for the GLM API.
+    if (sdkAvailable && !user) {
+      if (result) {
+        sessionStorage.setItem(PENDING_DOWNLOAD_KEY, JSON.stringify({ result, toolName }));
+      }
+      setLoginOpen(true);
       return;
     }
     setError('');
     setLoading(true);
     setResult(null);
     try {
-      const res = await generateYaml(key, docs);
+      let token = '';
+      if (sdkAvailable) {
+        token = await getAccessToken();
+      }
+      const res = await generateYaml(token, docs);
       setResult(res);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Conversion failed. Try again.');
@@ -133,7 +139,7 @@ const Index: React.FC = () => {
         <div className="grid grid-cols-3 gap-3 text-center text-xs text-gray-500">
           {[
             { step: '1', label: 'Copy API docs', desc: 'Select all text on a Zoho API docs page and copy' },
-            { step: '2', label: 'Paste & Generate', desc: 'Paste here and click Generate — Gemini does the rest' },
+            { step: '2', label: 'Paste & Generate', desc: 'Paste below, sign in with Zoho, and click Generate' },
             { step: '3', label: 'Use in ZIA Studio', desc: 'Download the YAML and upload it as a custom tool' },
           ].map(({ step, label, desc }) => (
             <div key={step} className="bg-white border border-gray-200 rounded-xl p-4 space-y-1">
@@ -145,9 +151,6 @@ const Index: React.FC = () => {
             </div>
           ))}
         </div>
-
-        {/* API Key Setup */}
-        <KeySetup onKeySet={setApiKey} />
 
         {/* Quick links to Zoho docs */}
         <div className="bg-white border border-gray-200 rounded-xl p-4">
@@ -205,7 +208,11 @@ const Index: React.FC = () => {
               className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 text-white font-semibold text-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
             >
               <Wand2 className="w-4 h-4" />
-              {loading ? 'Generating...' : 'Generate OpenAPI YAML'}
+              {loading
+                ? 'Generating...'
+                : sdkAvailable && !user
+                ? 'Sign in to Generate'
+                : 'Generate OpenAPI YAML'}
             </button>
           </div>
 
@@ -227,7 +234,7 @@ const Index: React.FC = () => {
         <div className="text-center text-xs text-gray-400 pb-4 space-y-2">
           <p>
             Generated YAML targets OpenAPI 3.0.1 · Compatible with ZIA Agent Studio custom tools ·
-            Uses Google Gemini (your own API key, free tier)
+            Powered by GLM-4.7-Flash on Catalyst LLM Serving
           </p>
           <p>
             Built with Claude Code · Hosted on Catalyst Slate ·{' '}
