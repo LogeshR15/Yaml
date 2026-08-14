@@ -52,13 +52,16 @@ function httpsPost(url, headers, body) {
 }
 
 module.exports = async (req, res) => {
+  console.log('[glm-proxy] method:', req.method, 'url:', req.url);
+
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
     return res.end();
   }
 
   if (req.method !== 'POST') {
-    return sendJson(res, 405, { error: 'Method not allowed' });
+    console.log('[glm-proxy] rejected method:', req.method);
+    return sendJson(res, 405, { error: 'Method not allowed: ' + req.method });
   }
 
   let body;
