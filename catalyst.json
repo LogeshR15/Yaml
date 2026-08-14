@@ -9,5 +9,13 @@
         "build_output_path": "dist"
       }
     }
+  ],
+  "functions": [
+    {
+      "name": "glm-proxy",
+      "source": "functions/glm-proxy",
+      "type": "BasicIO",
+      "runtime": "Node18"
+    }
   ]
 }

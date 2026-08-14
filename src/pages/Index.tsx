@@ -4,7 +4,6 @@ import DocsInput from '@/components/DocsInput';
 import YamlResult, { downloadYaml, slugifyToolName } from '@/components/YamlResult';
 import LoginModal from '@/components/LoginModal';
 import { generateYaml, type GenerateResult } from '@/utils/glm';
-import { getAccessToken } from '@/utils/catalyst-auth';
 import { ZOHO_PRODUCTS } from '@/utils/constants';
 import { useAuth } from '@/utils/AuthContext';
 
@@ -63,18 +62,7 @@ const Index: React.FC = () => {
     setLoading(true);
     setResult(null);
     try {
-      let token = '';
-      if (sdkAvailable) {
-        try {
-          token = await getAccessToken();
-        } catch (tokenErr) {
-          console.warn('[Auth] getAccessToken failed:', tokenErr);
-          throw new Error(
-            'Could not retrieve your Zoho session token. Try signing out and signing back in.'
-          );
-        }
-      }
-      const res = await generateYaml(token, docs);
+      const res = await generateYaml(docs);
       setResult(res);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Conversion failed. Try again.');

@@ -2,10 +2,10 @@ import { SYSTEM_PROMPT, RETRY_PROMPT_SUFFIX } from './prompt';
 import { validateOpenApiYaml, ValidationResult } from './validateYaml';
 import { sanitizeYaml } from './sanitizeYaml';
 
-const GLM_URL =
-  'https://api.catalyst.zoho.in/quickml/v1/project/17603000000023001/glm/chat';
+// Calls the Catalyst Function proxy (same-origin, no CORS) which in turn
+// calls the GLM API server-side with a Zoho OAuth token.
+const PROXY_URL = '/server/glm-proxy';
 const GLM_MODEL = 'crm-di-glm47b_30b_it';
-const CATALYST_ORG = '60039712979';
 
 export interface GenerateResult {
   yaml: string;
@@ -37,19 +37,14 @@ function extractText(data: any): string | null {
 }
 
 async function callGlm(
-  accessToken: string,
   userPrompt: string,
   maxTokens = 16384
 ): Promise<{ text: string }> {
   let res: Response;
   try {
-    res = await fetch(GLM_URL, {
+    res = await fetch(PROXY_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Zoho-oauthtoken ${accessToken}`,
-        'CATALYST-ORG': CATALYST_ORG,
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: GLM_MODEL,
         messages: [
@@ -89,13 +84,10 @@ async function callGlm(
   return { text: sanitizeYaml(stripMarkdownFences(raw)) };
 }
 
-export async function generateYaml(
-  accessToken: string,
-  docs: string
-): Promise<GenerateResult> {
+export async function generateYaml(docs: string): Promise<GenerateResult> {
   const userPrompt = `Convert the following Zoho API documentation into a complete, ZIA-agent-ready OpenAPI 3.0.1 YAML specification:\n\n${docs}`;
 
-  const result = await callGlm(accessToken, userPrompt);
+  const result = await callGlm(userPrompt);
 
   const validation = validateOpenApiYaml(result.text);
   if (validation.valid) {
@@ -105,7 +97,7 @@ export async function generateYaml(
   // Retry once with a stricter prompt suffix
   const retryPrompt = `${userPrompt}${RETRY_PROMPT_SUFFIX}`;
   try {
-    const retry = await callGlm(accessToken, retryPrompt);
+    const retry = await callGlm(retryPrompt);
     const rv = validateOpenApiYaml(retry.text);
     if (rv.valid || retry.text.includes('openapi')) {
       return { yaml: retry.text, modelUsed: GLM_MODEL, validation: rv };
