@@ -1,4 +1,4 @@
-import { SYSTEM_PROMPT, RETRY_PROMPT_SUFFIX } from './prompt';
+import { SYSTEM_PROMPT } from './prompt';
 import { validateOpenApiYaml, ValidationResult } from './validateYaml';
 import { sanitizeYaml } from './sanitizeYaml';
 

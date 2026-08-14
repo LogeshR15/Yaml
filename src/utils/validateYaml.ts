@@ -1,3 +1,10 @@
+/*
+ * This module walks an arbitrary, untrusted object graph produced by yaml.load()
+ * on model output. Its shape is unknown by definition — that is what is being
+ * validated — so `any` is the accurate type here rather than a cast to a
+ * structure we cannot guarantee.
+ */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import yaml from 'js-yaml';
 
 export interface ValidationResult {

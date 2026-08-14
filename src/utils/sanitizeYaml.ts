@@ -64,16 +64,16 @@ export function sanitizeYaml(raw: string): string {
     })
     .join('\n');
 
-  // 8. Extract the OAuth scope Gemini generated BEFORE stripping — it usually gets the
+  // 8. Extract the OAuth scope the model generated BEFORE stripping — it usually gets the
   //    scope right (e.g. ZohoCRM.modules.ALL) even when placement is wrong.
   const detectedScope = extractOAuthScope(text);
 
-  // Strip any security/securitySchemes Gemini generated (often in wrong location).
+  // Strip any security/securitySchemes the model generated (often in wrong location).
   // Step 11 re-injects a correctly placed version using the scope extracted above.
   text = removeSecurityFields(text);
 
   // 9. Fix $ref incorrectly placed as a key inside properties: — it must be at the parent level.
-  //    Gemini sometimes generates: items: { type: object, properties: { $ref: '#/...' } }
+  //    the model sometimes generates: items: { type: object, properties: { $ref: '#/...' } }
   //    which is invalid. The $ref must replace the whole object, not be a child of properties.
   text = fixRefInProperties(text);
 
@@ -116,7 +116,7 @@ const HTTP_DESCRIPTIONS: Record<string, string> = {
 /**
  * Fix response entries that use $ref directly to a schema object instead of a response object.
  * OpenAPI requires $ref at the response level to point to #/components/responses/, not schemas/.
- * Gemini commonly generates:
+ * the model commonly generates:
  *   "400":
  *     $ref: '#/components/schemas/ErrorResponse'    ← invalid
  * We rewrite it to:
@@ -129,7 +129,7 @@ const HTTP_DESCRIPTIONS: Record<string, string> = {
  */
 function fixResponseSchemaRefs(text: string): string {
   return text.replace(
-    /^( +)"(\d{3})":\n\1  (\$ref: ['"]?#\/components\/schemas\/[\w-]+['"]?)$/gm,
+    /^( +)"(\d{3})":\n\1 {2}(\$ref: ['"]?#\/components\/schemas\/[\w-]+['"]?)$/gm,
     (_, indent, code, ref) => {
       const desc = HTTP_DESCRIPTIONS[code] ?? 'Error';
       const i = indent; // indent of the status code line
@@ -146,8 +146,8 @@ function fixResponseSchemaRefs(text: string): string {
 }
 
 /**
- * Extract the OAuth scope from Gemini's raw output before we strip the security block.
- * Gemini usually picks the correct product scope (e.g. ZohoCRM.modules.ALL, Desk.tickets.ALL)
+ * Extract the OAuth scope from the model's raw output before we strip the security block.
+ * the model usually picks the correct product scope (e.g. ZohoCRM.modules.ALL, Desk.tickets.ALL)
  * from the API docs, even when it places the security block in the wrong location.
  */
 function extractOAuthScope(text: string): string {
@@ -169,7 +169,7 @@ function extractOAuthScope(text: string): string {
 }
 
 /**
- * Inject a canonical security block using the scope detected from Gemini's output.
+ * Inject a canonical security block using the scope detected from the model's output.
  *
  * Structure injected:
  *   security:               ← root level, before paths:
@@ -215,19 +215,19 @@ function addSystemParamTags(text: string): string {
 
 /**
  * Fix $ref placed as a key inside a properties: block, which is always invalid in OpenAPI.
- * Handles two forms Gemini generates:
+ * Handles two forms the model generates:
  *   A: type: object  +  properties:  +  sole $ref:  →  just $ref at parent indent
  *   B: properties:  +  sole $ref:  (no explicit type line)  →  just $ref at parent indent
  */
 function fixRefInProperties(text: string): string {
   // Form A: { type: object, properties: { $ref: ... } }
   text = text.replace(
-    /^( +)type: object\n\1properties:\n\1  (\$ref: .+)$/gm,
+    /^( +)type: object\n\1properties:\n\1 {2}(\$ref: .+)$/gm,
     '$1$2',
   );
   // Form B: { properties: { $ref: ... } } without explicit type
   text = text.replace(
-    /^( +)properties:\n\1  (\$ref: .+)$/gm,
+    /^( +)properties:\n\1 {2}(\$ref: .+)$/gm,
     '$1$2',
   );
   return text;

@@ -1,203 +1,166 @@
 # ZIA YAML Studio
 
-> Convert Zoho API documentation into ZIA-agent-ready OpenAPI 3.0.1 YAML specs in seconds. No developer needed.
+Paste a Zoho API documentation page, get a ZIA-agent-ready **OpenAPI 3.0.1 YAML**
+spec back. No OpenAPI knowledge needed.
+
+ZIA Agent Studio needs a precise OpenAPI spec before an agent can call any custom
+API. Writing one by hand is the barrier this removes.
+
+**Live:** https://yaml-roljsobe.onslate.in
 
 ---
 
-## What Is This?
+## How it works
 
-**ZIA YAML Studio** is a browser-based tool that solves a specific problem:
-
-Zoho ZIA Agent Studio requires a custom OpenAPI 3.0.1 YAML file to connect agents to APIs that aren't available as built-in tools. Writing these YAML files manually requires deep OpenAPI knowledge — a barrier for non-technical business users.
-
-This tool removes that barrier. You copy text from any Zoho API documentation page, paste it in, and get a production-ready OpenAPI spec that you can upload directly to ZIA Agent Studio.
-
----
-
-## Who Is It For?
-
-- **Business users** who need to build ZIA agents but can't write YAML
-- **Zoho admins** who want to connect agents to Zoho Desk, FSM, CRM, Books, or any other Zoho product API
-- **Developers** who want to speed up repetitive OpenAPI spec creation
-
----
-
-## How It Works
+1. Copy any Zoho API docs page (Ctrl/⌘+A, copy)
+2. Paste it in and click **Generate**
+3. Download the `.yaml` and upload it to ZIA Agent Studio as a custom tool
 
 ```
-1. Copy text from a Zoho API docs page  (Ctrl+A, Ctrl+C)
-        ↓
-2. Paste into ZIA YAML Studio
-        ↓
-3. Click Generate — Gemini AI reads the docs and writes the OpenAPI spec
-        ↓
-4. Download the .yaml file
-        ↓
-5. Upload to ZIA Agent Studio → Tools → Custom Tool → Schema
+Browser (Slate, static React)
+   │  POST  /server/glm-proxy/execute
+   ▼
+Catalyst Function  (Advanced I/O, zero npm dependencies)
+   │  refreshes a Zoho OAuth token, then calls
+   ▼
+Catalyst LLM Serving — GLM-4.7-Flash (crm-di-glm47b_30b_it)
+   │
+   ▼
+sanitizeYaml → validateYaml → rendered in the browser
 ```
 
----
-
-## Features
-
-- **AI-powered conversion** — Uses Google Gemini (free tier, BYOK) to parse unstructured API docs
-- **ZIA-optimised output** — Generates OpenAPI 3.0.1 (the version ZIA Agent Studio requires)
-- **Smart prompt** — Enforces all ZIA compatibility rules: correct `operationId` format, `securitySchemes` placement, array `items`, Zoho ID types as `string`, OAuth2 scopes, MCP-ready `description` fields
-- **Model fallback** — Tries 6 Gemini models in sequence; if one is overloaded or unavailable, silently moves to the next
-- **Output sanitizer** — Auto-fixes common AI generation artifacts (unclosed quotes, malformed security blocks, invisible browser characters)
-- **Validation** — Checks the output against OpenAPI structural rules before displaying
-- **Swagger Editor link** — One click to validate in Swagger Editor for detailed error inspection
-- **No backend** — Runs entirely in the browser; your API key is stored only in localStorage
-- **No login required** — No Firebase, no Google auth, no account needed
+The browser never holds a credential. The proxy exists because the GLM endpoint
+does not allow cross-origin browser calls, and because the OAuth token must stay
+server-side.
 
 ---
 
-## Supported Zoho APIs
+## Architecture notes
 
-Quick links to documentation pages you can copy from:
+**Why a proxy function at all?** Two reasons: CORS, and keeping the refresh token
+off the client.
 
-| Product | API Docs |
-|---------|----------|
-| Zoho Desk | https://desk.zoho.com/DeskAPIDocument |
-| Zoho CRM | https://www.zoho.com/crm/developer/docs/api/v8/ |
-| Zoho FSM | https://www.zoho.com/fsm/developer/help/api/ |
-| Zoho Books | https://www.zoho.com/books/api/v3/ |
-| Zoho Projects | https://projects.zoho.com/api-docs |
-| Zoho People | https://www.zoho.com/people/api/overview.html |
-| Zoho Inventory | https://www.zoho.com/inventory/api/v1/ |
-| Zoho Sign | https://www.zoho.com/sign/api/ |
+**Output is capped at 1300 tokens.** Advanced I/O functions are killed at 30
+seconds — a hard Catalyst limit, not a setting. Measured GLM throughput is
+~53 output tokens/sec, so 1300 tokens ≈ 25s and fits. A larger cap guarantees a
+408 instead of a spec. When output does hit the cap the UI says so explicitly
+rather than handing over a truncated file.
 
-All Zoho APIs use OAuth 2.0. The generated YAML includes the correct `authorizationUrl` and `tokenUrl` automatically.
+To lift that ceiling, move the proxy to **AppSail** (no timeout). The handler
+logic ports over almost unchanged.
+
+**The system prompt is deliberately economical.** Earlier versions told the model
+to "expand response schemas realistically", which made it invent response fields
+the docs never mentioned — both wrong and the main cause of truncation. It is now
+forbidden from inventing field names and told to emit a minimal `data` array when
+the docs do not document a response body.
+
+**Validation is advisory, never blocking.** The YAML is always shown and
+copyable; `validateYaml` reports errors and warnings alongside it.
+
+**Sign-in gates only the download.** Generation and copy work without it.
 
 ---
 
-## Getting Started (Local)
-
-### Prerequisites
-- Node.js 22.x ([install with nvm](https://github.com/nvm-sh/nvm))
-- A free Google Gemini API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
-
-### Run Locally
+## Local development
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/LogeshR15/Yaml.git
-cd Yaml
-
-# 2. Install dependencies
 npm install
-
-# 3. Start the dev server
 npm run dev
 ```
 
-Open **http://localhost:8080** in your browser.
+The Catalyst SDK is only injected on the deployed Slate site, so in local dev
+`sdkAvailable` is false and the download is ungated. Generation still calls the
+deployed proxy function.
 
-No `.env` file is needed. The app runs without any environment variables.
-
-### Getting a Free Gemini API Key
-
-1. Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
-2. Sign in with your Google account
-3. Click **Create API key**
-4. Copy the key (starts with `AIza...`)
-5. Paste it into the **Set up Gemini API key** section in the app and click Save
-
-Free tier limits: **1,500 requests/day**, no credit card required.
+| Command | |
+|---|---|
+| `npm run dev` | Vite dev server |
+| `npm run build` | production build to `dist/` |
+| `npm run lint` | ESLint |
 
 ---
 
-## Deployment on Zoho Catalyst
+## Deployment
 
-This is a pure static frontend — no backend or database required.
+**Frontend (Slate)** — auto-builds and deploys on push to `main`.
 
-**Recommended stack:** Node.js (22.14.0) on Catalyst AppSail
-**Minimum machine type:** 2 Core / 4 GB RAM / 30 GB Storage
+**Function (`glm-proxy`)** — manual upload; Catalyst Functions have no git-based
+deploy. Zip these together and upload via Console → Functions → Deploy:
 
-```bash
-# Build for production
-npm run build
-
-# The dist/ folder contains the static files to deploy
+```
+functions/glm-proxy/index.js
+functions/glm-proxy/credentials.js      ← gitignored, see below
+functions/glm-proxy/catalyst-config.json
 ```
 
-Deploy the `dist/` folder to Catalyst AppSail or any static hosting service.
+### Credentials
+
+The function needs a Zoho OAuth refresh token with scope
+`QuickML.deployment.READ`. It reads credentials from environment variables first,
+then falls back to `credentials.js`.
+
+`credentials.js` and the real `catalyst-config.json` are **gitignored** — this
+repo is public. Copy the `.example` files and fill them in:
+
+```bash
+cp functions/glm-proxy/credentials.example.js functions/glm-proxy/credentials.js
+cp functions/glm-proxy/catalyst-config.example.json functions/glm-proxy/catalyst-config.json
+```
+
+To mint a refresh token: create a **Self Client** at
+[api-console.zoho.in](https://api-console.zoho.in), generate a code for scope
+`QuickML.deployment.READ`, then exchange it (the code expires in 10 minutes):
+
+```bash
+curl -X POST "https://accounts.zoho.in/oauth/v2/token" \
+  -d "grant_type=authorization_code" \
+  -d "client_id=<id>" -d "client_secret=<secret>" -d "code=<code>"
+```
+
+Refresh tokens do not expire, so this is a one-time step.
 
 ---
 
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Framework | React 18 + TypeScript 5 |
-| Build tool | Vite 5 (SWC compiler) |
-| Styling | Tailwind CSS |
-| UI components | shadcn/ui + Radix UI |
-| Icons | Lucide React |
-| YAML parsing | js-yaml |
-| Routing | React Router v6 |
-| AI provider | Google Gemini API (user's own key) |
-| State management | React useState (no Redux/Zustand) |
-| Auth | None |
-| Backend | None |
-| Database | None |
-
----
-
-## Project Structure
+## Project structure
 
 ```
 src/
+├── main.tsx                 entry
+├── App.tsx                  hash-based routing (home / #contact)
 ├── pages/
-│   └── Index.tsx              # Main page — orchestrates the 3-step flow
+│   ├── Index.tsx            main generator UI
+│   └── Contact.tsx
 ├── components/
-│   ├── Navbar.tsx             # Top navigation bar
-│   ├── KeySetup.tsx           # Gemini API key input and storage
-│   ├── DocsInput.tsx          # Paste zone for API documentation
-│   └── YamlResult.tsx         # Output panel with copy/download/validate
+│   ├── DocsInput.tsx        docs textarea
+│   ├── YamlResult.tsx       output panel, copy / download / Swagger
+│   └── LoginModal.tsx       embedded Zoho sign-in
 └── utils/
-    ├── gemini.ts              # Gemini API client with 6-model fallback
-    ├── prompt.ts              # System prompt with ZIA-specific OpenAPI rules
-    ├── sanitizeYaml.ts        # Post-processing to fix AI generation artifacts
-    └── validateYaml.ts        # Structural validation against OpenAPI rules
+    ├── glm.ts               proxy client, token cap, truncation detection
+    ├── prompt.ts            system prompt
+    ├── sanitizeYaml.ts      fixes model output quirks, injects OAuth block
+    ├── validateYaml.ts      structural checks (advisory)
+    ├── catalyst-auth.ts     Catalyst Web SDK wrapper
+    ├── AuthContext.tsx      polls for the SDK, exposes auth state
+    └── constants.ts         Zoho docs quick links
+
+functions/glm-proxy/         Catalyst Advanced I/O proxy
 ```
 
 ---
 
-## OpenAPI Rules Enforced
+## Stack
 
-The AI prompt is tuned to produce ZIA-compatible specs. Key rules applied automatically:
+React 18 · TypeScript · Vite · Tailwind · js-yaml ·
+Catalyst Slate (hosting) · Catalyst Functions (proxy) ·
+Catalyst LLM Serving / GLM-4.7-Flash
 
-| Rule | Why It Matters |
-|------|---------------|
-| `openapi: 3.0.1` | ZIA Agent Studio requires exactly this version |
-| `operationId` = camelCase verb+noun | Becomes the tool name the LLM uses to call the API |
-| Rich `description` on every operation | Primary signal ZIA uses to select the right tool |
-| `securitySchemes` under `components` | Root-level placement causes spec rejection |
-| All arrays have `items` | Agents can't interpret typeless arrays |
-| Zoho IDs as `type: string` | 18-digit IDs overflow `integer` type |
-| `format: date` on date fields | Prevents LLM from hallucinating date formats |
-| `enum` on fixed-value fields | Constrains agent to valid values |
-| `example` on all parameters | Improves tool-calling accuracy in ZIA |
+## Known limitations
 
----
-
-## Known Limitations
-
-- Output quality depends on how much detail is in the pasted docs — more text = better YAML
-- Gemini free tier has rate limits; the tool falls back through 6 models automatically
-- The tool generates a first-pass spec; complex APIs may need minor manual edits
-- Zoho Catalyst deployment has not been tested end-to-end (local dev only)
-
----
-
-## About ZIA Agents
-
-Zoho ZIA Agents are autonomous AI agents that can call REST APIs as tools. To connect an agent to a custom API:
-
-1. In ZIA Agent Studio, go to **Tools → Create Tool Group → Custom**
-2. Under **Schema**, upload an OpenAPI 3.0.1 YAML file
-3. Create a **Connection** with the OAuth credentials for the target API
-4. The agent will use the `operationId` and `description` fields to decide when and how to call each endpoint
-
-More: [Zoho ZIA Agents](https://www.zoho.com/agents/) · [ZIA Agent Studio](https://www.zoho.com/agents/resources/help/)
+- **~1300 output tokens per request** — roughly one to three endpoints. Larger
+  docs pages truncate, with a warning. AppSail lifts this.
+- **The proxy endpoint has no gateway authentication** — anyone with the URL can
+  spend the GLM quota. Add auth or throttling before treating this as public.
+- The generated spec is a strong starting point, not a guarantee. Validate in
+  [Swagger Editor](https://editor.swagger.io) (one click from the output panel)
+  before shipping it to an agent.

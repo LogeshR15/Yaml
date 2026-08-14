@@ -16,10 +16,6 @@ const App = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  const handleNavigate = (route: string) => {
-    window.location.hash = route === 'home' ? '' : route;
-  };
-
   return (
     <AuthProvider>
       {page === 'home' ? <Index /> : <Contact />}

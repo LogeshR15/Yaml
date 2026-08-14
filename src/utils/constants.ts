@@ -8,5 +8,3 @@ export const ZOHO_PRODUCTS = [
   { name: 'Inventory', url: 'https://www.zoho.com/inventory/api/v1/' },
   { name: 'Sign', url: 'https://www.zoho.com/sign/api/' },
 ];
-
-export const PRODUCT_NAMES = ZOHO_PRODUCTS.map(p => p.name);

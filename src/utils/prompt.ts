@@ -172,10 +172,3 @@ Before outputting, mentally verify:
 9. Nothing is invented that the documentation did not state
 10. The YAML is COMPLETE — it ends mid-nothing, with no dangling key
 `.trim();
-
-export const RETRY_PROMPT_SUFFIX = `
-
-IMPORTANT: Your previous response was not valid OpenAPI YAML.
-Output ONLY the YAML, starting with the line: openapi: 3.0.1
-No explanations, no markdown fences, no text before or after the YAML.
-`;

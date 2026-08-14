@@ -77,7 +77,7 @@ const YamlResult: React.FC<YamlResultProps> = ({
         </div>
         <div className="text-center">
           <p className="text-sm font-medium text-gray-700">Generating OpenAPI spec...</p>
-          <p className="text-xs text-gray-400 mt-1">Gemini is reading your API docs</p>
+          <p className="text-xs text-gray-400 mt-1">GLM is reading your API docs</p>
         </div>
       </div>
     );
