@@ -6,3 +6,4 @@ node_modules
 node_modules/
 glm-proxy.zip
 functions/glm-proxy/catalyst-config.json
+functions/glm-proxy/credentials.js

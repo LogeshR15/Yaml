@@ -55,19 +55,42 @@ function httpsRequest(url, { method = 'POST', headers = {}, body = '', timeoutMs
 }
 
 /** Exchanges the long-lived refresh token for a short-lived access token. */
+/**
+ * Credentials resolve from the environment first, then from a bundled
+ * credentials.js. The file fallback exists because Console-set env vars have
+ * proven unreliable to get into the runtime; the file ships in the deploy zip
+ * and is gitignored (this repo is public).
+ */
+function readCredentials() {
+  let file = {};
+  try {
+    // eslint-disable-next-line global-require
+    file = require('./credentials.js');
+  } catch {
+    // Absent is fine as long as env vars are set.
+  }
+  return {
+    clientId: process.env.QUICKML_CLIENT_ID || file.QUICKML_CLIENT_ID,
+    clientSecret: process.env.QUICKML_CLIENT_SECRET || file.QUICKML_CLIENT_SECRET,
+    refreshToken: process.env.QUICKML_REFRESH_TOKEN || file.QUICKML_REFRESH_TOKEN,
+    source: process.env.QUICKML_CLIENT_ID ? 'env' : 'credentials.js',
+  };
+}
+
 async function getAccessToken() {
   if (cachedToken && Date.now() < cachedTokenExpiry) return cachedToken;
 
-  const clientId = process.env.QUICKML_CLIENT_ID;
-  const clientSecret = process.env.QUICKML_CLIENT_SECRET;
-  const refreshToken = process.env.QUICKML_REFRESH_TOKEN;
+  const { clientId, clientSecret, refreshToken, source } = readCredentials();
+  console.log('[glm-proxy] credential source:', source);
 
   const missing = [];
   if (!clientId) missing.push('QUICKML_CLIENT_ID');
   if (!clientSecret) missing.push('QUICKML_CLIENT_SECRET');
   if (!refreshToken) missing.push('QUICKML_REFRESH_TOKEN');
   if (missing.length) {
-    throw new Error(`Missing environment variable(s): ${missing.join(', ')}`);
+    throw new Error(
+      `No credentials found for: ${missing.join(', ')} — checked env vars and credentials.js`
+    );
   }
 
   const form = new URLSearchParams({
