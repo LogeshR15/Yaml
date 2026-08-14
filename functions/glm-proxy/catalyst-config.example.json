@@ -1,0 +1,15 @@
+{
+  "deployment": {
+    "name": "glm-proxy",
+    "type": "advancedio",
+    "stack": "node18",
+    "env_variables": {
+      "QUICKML_CLIENT_ID": "<self-client id from api-console.zoho.in>",
+      "QUICKML_CLIENT_SECRET": "<self-client secret>",
+      "QUICKML_REFRESH_TOKEN": "<refresh token for scope QuickML.deployment.READ>"
+    }
+  },
+  "execution": {
+    "main": "index.js"
+  }
+}

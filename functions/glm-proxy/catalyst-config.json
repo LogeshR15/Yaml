@@ -1,8 +1,0 @@
-{
-  "type": "advancedio",
-  "stack": "node18",
-  "deployment": {
-    "memory": 128,
-    "timeout": 30
-  }
-}
