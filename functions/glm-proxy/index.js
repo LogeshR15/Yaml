@@ -72,8 +72,9 @@ module.exports = async (req, res) => {
   let token;
   try {
     const app = catalyst.initialize(req, { scope: 'admin' });
-    const conn = app.connection('quickml');
-    token = await conn.getToken();
+    const connector = app.connection().getConnector('quickml');
+    const tokenData = await connector.getAccessToken();
+    token = tokenData.access_token;
   } catch (err) {
     console.error('[glm-proxy] token error:', err);
     return sendJson(res, 500, { error: 'Failed to get OAuth token: ' + err.message });
