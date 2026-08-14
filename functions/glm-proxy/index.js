@@ -102,7 +102,7 @@ async function getAccessToken() {
 }
 
 module.exports = async (req, res) => {
-  console.log('[glm-proxy] method:', req.method, 'url:', req.url);
+  console.log('[glm-proxy] v2 method:', req.method, 'url:', req.url);
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
