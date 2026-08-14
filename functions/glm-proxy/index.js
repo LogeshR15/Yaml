@@ -3,7 +3,7 @@ const catalyst = require('zcatalyst-sdk-node');
 const https = require('https');
 
 const GLM_URL =
-  'https://api.catalyst.zoho.in/quickml/v1/project/17603000000084001/glm/chat';
+  'https://api.catalyst.zoho.in/quickml/v1/project/17603000000023001/glm/chat';
 const CATALYST_ORG = '60039712979';
 
 function sendJson(res, statusCode, data) {
