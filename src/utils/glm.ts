@@ -2,9 +2,8 @@ import { SYSTEM_PROMPT, RETRY_PROMPT_SUFFIX } from './prompt';
 import { validateOpenApiYaml, ValidationResult } from './validateYaml';
 import { sanitizeYaml } from './sanitizeYaml';
 
-// Calls the Catalyst Function proxy (same-origin, no CORS) which in turn
-// calls the GLM API server-side with a Zoho OAuth token.
-const PROXY_URL = '/server/glm-proxy/execute';
+// Catalyst Function proxy — absolute URL since Slate and Functions are on different domains.
+const PROXY_URL = 'https://yaml-60039712979.development.catalystserverless.in/server/glm-proxy/execute';
 const GLM_MODEL = 'crm-di-glm47b_30b_it';
 
 export interface GenerateResult {
