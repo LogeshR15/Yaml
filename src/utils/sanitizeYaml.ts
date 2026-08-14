@@ -1,7 +1,12 @@
 /**
  * Cleans common AI-generation artifacts from YAML output.
  */
-export function sanitizeYaml(raw: string): string {
+/**
+ * @param raw   Raw model output.
+ * @param docs  The original pasted documentation. Used only as a fallback source
+ *              for the OAuth scope when the model omits a security block.
+ */
+export function sanitizeYaml(raw: string, docs?: string): string {
   let text = raw.trim();
 
   // 1. Strip markdown fences
@@ -66,7 +71,7 @@ export function sanitizeYaml(raw: string): string {
 
   // 8. Extract the OAuth scope the model generated BEFORE stripping — it usually gets the
   //    scope right (e.g. ZohoCRM.modules.ALL) even when placement is wrong.
-  const detectedScope = extractOAuthScope(text);
+  const detectedScope = extractOAuthScope(text, docs);
 
   // Strip any security/securitySchemes the model generated (often in wrong location).
   // Step 11 re-injects a correctly placed version using the scope extracted above.
@@ -150,7 +155,7 @@ function fixResponseSchemaRefs(text: string): string {
  * the model usually picks the correct product scope (e.g. ZohoCRM.modules.ALL, Desk.tickets.ALL)
  * from the API docs, even when it places the security block in the wrong location.
  */
-function extractOAuthScope(text: string): string {
+function extractOAuthScope(text: string, docs?: string): string {
   // Match scope keys inside a scopes: block (indented 8+ spaces): ZohoCRM.modules.ALL: description
   const inSchemes = text.match(/scopes:\s*\n\s+([A-Za-z][\w]+(?:\.[\w]+)+)\s*:/);
   if (inSchemes?.[1]) return inSchemes[1];
@@ -163,6 +168,17 @@ function extractOAuthScope(text: string): string {
       const m = lines[i].match(/^\s*-\s+([A-Za-z][\w]+(?:\.[\w]+)+)\s*$/);
       if (m?.[1]) return m[1];
     }
+  }
+
+  // Fall back to the pasted documentation, which states the scope verbatim —
+  // e.g. "scope=ZohoFSM.modules.ServiceReports.READ" or "Scope: Desk.tickets.READ".
+  // Without this the spec gets the generic catch-all scope, which is wrong and
+  // makes the agent request far broader access than the endpoint needs.
+  if (docs) {
+    const fromDocs = docs.match(
+      /scopes?\s*[=:]?\s*((?:Zoho|Desk|Cliq|Wms|Recruit)[\w]*(?:\.[\w]+)+)/i
+    );
+    if (fromDocs?.[1]) return fromDocs[1];
   }
 
   return 'ZohoAPI.fullaccess.all';
@@ -184,9 +200,15 @@ function injectSecurity(text: string, scope = 'ZohoAPI.fullaccess.all'): string 
     text = text.replace(/^paths:/m, `security:\n  - ZohoOAuth:\n      - ${scope}\npaths:`);
   }
 
-  if (!/securitySchemes:/m.test(text) && /^components:/m.test(text)) {
+  if (!/securitySchemes:/m.test(text)) {
     const schemes = `  securitySchemes:\n    ZohoOAuth:\n      type: oauth2\n      flows:\n        authorizationCode:\n          authorizationUrl: https://accounts.zoho.com/oauth/v2/auth\n          tokenUrl: https://accounts.zoho.com/oauth/v2/token\n          scopes:\n            ${scope}: Access to Zoho APIs`;
-    text = text.trimEnd() + '\n' + schemes;
+
+    // The model is told to omit an empty components block, so it is frequently
+    // absent. Create it here — otherwise the root security: block above would
+    // reference a ZohoOAuth scheme that is never defined, which ZIA rejects.
+    text = /^components:/m.test(text)
+      ? text.trimEnd() + '\n' + schemes
+      : text.trimEnd() + '\ncomponents:\n' + schemes;
   }
 
   return text;
@@ -199,15 +221,41 @@ function injectSecurity(text: string, scope = 'ZohoAPI.fullaccess.all'): string 
  */
 function addSystemParamTags(text: string): string {
   const lines = text.split('\n');
+  const indentOf = (l: string) => l.length - l.trimStart().length;
+
+  /**
+   * Does the parameter block containing line `i` already carry the tag?
+   *
+   * The model often emits the tag AFTER schema:, several lines below in: path —
+   * so checking only the next line finds nothing and we emit a second copy,
+   * producing a duplicate mapping key that makes the whole document unparseable.
+   * Scan the entire parameter entry instead.
+   */
+  const blockHasTag = (i: number): boolean => {
+    const propIndent = indentOf(lines[i]);
+    // Walk back to the "- name:" line that opens this parameter entry.
+    let start = i;
+    while (start > 0 && !/^\s*-\s/.test(lines[start])) {
+      if (indentOf(lines[start]) < propIndent) break;
+      start--;
+    }
+    // Walk forward to the next entry at the same level, or a dedent out of the list.
+    let end = i + 1;
+    while (end < lines.length) {
+      const l = lines[end];
+      if (l.trim() === '') { end++; continue; }
+      if (/^\s*-\s/.test(l) && indentOf(l) < propIndent) break;
+      if (indentOf(l) < propIndent) break;
+      end++;
+    }
+    return lines.slice(start, end).some((l) => l.includes('x-zia-agent-param-type:'));
+  };
+
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {
     out.push(lines[i]);
-    if (/^\s+in: path\s*$/.test(lines[i])) {
-      const next = lines[i + 1] ?? '';
-      if (!next.includes('x-zia-agent-param-type:')) {
-        const indent = ' '.repeat(lines[i].length - lines[i].trimStart().length);
-        out.push(`${indent}x-zia-agent-param-type: system`);
-      }
+    if (/^\s+in: path\s*$/.test(lines[i]) && !blockHasTag(i)) {
+      out.push(' '.repeat(indentOf(lines[i])) + 'x-zia-agent-param-type: system');
     }
   }
   return out.join('\n');

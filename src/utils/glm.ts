@@ -54,6 +54,7 @@ const MAX_OUTPUT_TOKENS = 1300;
 
 async function callGlm(
   userPrompt: string,
+  docs: string,
   maxTokens = MAX_OUTPUT_TOKENS
 ): Promise<{ text: string; truncated: boolean }> {
   let res: Response;
@@ -110,13 +111,13 @@ async function callGlm(
   const completion = Number(data?.usage?.completion_tokens ?? 0);
   const truncated = completion >= maxTokens;
 
-  return { text: sanitizeYaml(stripMarkdownFences(raw)), truncated };
+  return { text: sanitizeYaml(stripMarkdownFences(raw), docs), truncated };
 }
 
 export async function generateYaml(docs: string): Promise<GenerateResult> {
   const userPrompt = `Convert the following Zoho API documentation into a complete, ZIA-agent-ready OpenAPI 3.0.1 YAML specification:\n\n${docs}`;
 
-  const result = await callGlm(userPrompt);
+  const result = await callGlm(userPrompt, docs);
 
   const validation = validateOpenApiYaml(result.text);
 

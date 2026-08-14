@@ -98,8 +98,9 @@ useless. Completeness of the ESSENTIALS beats richness of detail. Therefore:
   - required array must be accurate — only include truly mandatory fields
 
 === RESPONSES ===
-- Include ONLY "200" (or "201" for POST), "400" and "401". Do not add 403/404/500
-  unless the documentation explicitly documents them.
+- Include "200" (or "201" for POST) plus these description-only error codes:
+  "400", "401", "403", "404", "429", "500". They are one line each, so they cost
+  almost nothing and ZIA uses them to decide how to handle failures.
 - 200/201: content schema containing ONLY response fields the documentation
   explicitly lists by name.
 - ABSOLUTE RULE — NEVER invent response field names. Do not guess at fields like
@@ -120,12 +121,20 @@ useless. Completeness of the ESSENTIALS beats richness of detail. Therefore:
                 items:
                   type: object
 - Never emit more than 8 properties in any single schema.
-- "400" and "401" must be description-only — a single line, NO content block and
-  NO schema. Example:
+- Every error response must be description-only — a single line, NO content block
+  and NO schema. Exactly this shape:
     "400":
       description: Bad Request — invalid or missing parameters.
     "401":
-      description: Unauthorized — invalid or expired OAuth token.
+      description: Unauthorized — invalid or expired access token.
+    "403":
+      description: Forbidden — user lacks permission.
+    "404":
+      description: Not Found — no matching record.
+    "429":
+      description: Too Many Requests — API rate limit exceeded.
+    "500":
+      description: Internal Server Error.
 - NEVER use $ref directly at the response level pointing to schemas/ — a response
   needs description, and content/schema is where a $ref may appear:
   WRONG: "200": { $ref: '#/components/schemas/ReportList' }
