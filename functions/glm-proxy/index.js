@@ -1,10 +1,16 @@
 'use strict';
-const catalyst = require('zcatalyst-sdk-node');
+// Zero external dependencies — uses only Node built-ins so the function can be
+// pasted straight into the Catalyst console editor with no npm install step.
 const https = require('https');
 
 const GLM_URL =
   'https://api.catalyst.zoho.in/quickml/v1/project/17603000000023001/glm/chat';
 const CATALYST_ORG = '60039712979';
+const TOKEN_URL = 'https://accounts.zoho.in/oauth/v2/token';
+
+// Cached across warm invocations so we don't refresh on every request.
+let cachedToken = null;
+let cachedTokenExpiry = 0;
 
 function sendJson(res, statusCode, data) {
   res.writeHead(statusCode, { 'Content-Type': 'application/json' });
@@ -26,31 +32,73 @@ function getBody(req) {
   });
 }
 
-function httpsPost(url, headers, body, timeoutMs = 25000) {
+function httpsRequest(url, { method = 'POST', headers = {}, body = '', timeoutMs = 25000 }) {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
-    const payload = JSON.stringify(body);
     const options = {
       hostname: parsed.hostname,
-      path: parsed.pathname,
-      method: 'POST',
+      path: parsed.pathname + (parsed.search || ''),
+      method,
       timeout: timeoutMs,
-      headers: {
-        ...headers,
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(payload),
-      },
+      headers: { ...headers, 'Content-Length': Buffer.byteLength(body) },
     };
-    const reqHttp = https.request(options, (r) => {
+    const r = https.request(options, (resp) => {
       let data = '';
-      r.on('data', (chunk) => { data += chunk; });
-      r.on('end', () => resolve({ status: r.statusCode, body: data }));
+      resp.on('data', (c) => { data += c; });
+      resp.on('end', () => resolve({ status: resp.statusCode, body: data }));
     });
-    reqHttp.on('timeout', () => { reqHttp.destroy(); reject(new Error('GLM request timed out after 25s')); });
-    reqHttp.on('error', reject);
-    reqHttp.write(payload);
-    reqHttp.end();
+    r.on('timeout', () => { r.destroy(); reject(new Error(`Request to ${parsed.hostname} timed out after ${timeoutMs}ms`)); });
+    r.on('error', reject);
+    if (body) r.write(body);
+    r.end();
   });
+}
+
+/** Exchanges the long-lived refresh token for a short-lived access token. */
+async function getAccessToken() {
+  if (cachedToken && Date.now() < cachedTokenExpiry) return cachedToken;
+
+  const clientId = process.env.QUICKML_CLIENT_ID;
+  const clientSecret = process.env.QUICKML_CLIENT_SECRET;
+  const refreshToken = process.env.QUICKML_REFRESH_TOKEN;
+
+  const missing = [];
+  if (!clientId) missing.push('QUICKML_CLIENT_ID');
+  if (!clientSecret) missing.push('QUICKML_CLIENT_SECRET');
+  if (!refreshToken) missing.push('QUICKML_REFRESH_TOKEN');
+  if (missing.length) {
+    throw new Error(`Missing environment variable(s): ${missing.join(', ')}`);
+  }
+
+  const form = new URLSearchParams({
+    grant_type: 'refresh_token',
+    client_id: clientId,
+    client_secret: clientSecret,
+    refresh_token: refreshToken,
+  }).toString();
+
+  const resp = await httpsRequest(TOKEN_URL, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: form,
+    timeoutMs: 10000,
+  });
+
+  let parsed;
+  try {
+    parsed = JSON.parse(resp.body);
+  } catch {
+    throw new Error(`Token endpoint returned non-JSON (HTTP ${resp.status}): ${resp.body.slice(0, 200)}`);
+  }
+
+  if (!parsed.access_token) {
+    throw new Error(`Token refresh failed (HTTP ${resp.status}): ${resp.body.slice(0, 300)}`);
+  }
+
+  cachedToken = parsed.access_token;
+  // expires_in is seconds; refresh 5 minutes early.
+  const ttlMs = (parseInt(parsed.expires_in, 10) || 3600) * 1000;
+  cachedTokenExpiry = Date.now() + Math.max(ttlMs - 300000, 60000);
+  return cachedToken;
 }
 
 module.exports = async (req, res) => {
@@ -62,7 +110,6 @@ module.exports = async (req, res) => {
   }
 
   if (req.method !== 'POST') {
-    console.log('[glm-proxy] rejected method:', req.method);
     return sendJson(res, 405, { error: 'Method not allowed: ' + req.method });
   }
 
@@ -73,34 +120,31 @@ module.exports = async (req, res) => {
     return sendJson(res, 400, { error: 'Invalid JSON body' });
   }
 
-  // Get OAuth token via a Catalyst Connection named "quickml"
   let token;
   try {
-    const app = catalyst.initialize(req, { scope: 'admin' });
-    const connector = app.connection().getConnector('quickml');
-    const tokenData = await connector.getAccessToken();
-    token = tokenData.access_token;
+    token = await getAccessToken();
   } catch (err) {
-    console.error('[glm-proxy] token error:', err);
+    console.error('[glm-proxy] token error:', err.message);
     return sendJson(res, 500, { error: 'Failed to get OAuth token: ' + err.message });
   }
 
-  // Forward to GLM API
   let glmRes;
   try {
-    glmRes = await httpsPost(
-      GLM_URL,
-      {
+    glmRes = await httpsRequest(GLM_URL, {
+      headers: {
+        'Content-Type': 'application/json',
         Authorization: `Zoho-oauthtoken ${token}`,
         'CATALYST-ORG': CATALYST_ORG,
       },
-      body
-    );
+      body: JSON.stringify(body),
+      timeoutMs: 25000,
+    });
   } catch (err) {
-    console.error('[glm-proxy] GLM request error:', err);
+    console.error('[glm-proxy] GLM request error:', err.message);
     return sendJson(res, 502, { error: 'GLM request failed: ' + err.message });
   }
 
+  console.log('[glm-proxy] GLM responded', glmRes.status, 'bytes:', glmRes.body.length);
   res.writeHead(glmRes.status, { 'Content-Type': 'application/json' });
   res.end(glmRes.body);
 };
